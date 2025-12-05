@@ -2,16 +2,31 @@
 % Please edit documentation in R/utils.R
 \name{plot_editing_barplot}
 \alias{plot_editing_barplot}
-\title{Plot statistics in the tested wt bases}
+\title{Plot Editing Statistics in Tested Wild-Type Bases}
 \usage{
 plot_editing_barplot(fit)
 }
 \arguments{
-\item{fit}{the result of detect_edits}
+\item{fit}{The \code{list} object resulting from a base editor
+analysis function (e.g., \code{detect_edits}), which contains
+the intermediate processed data in the \code{output_sample_alt}
+slot.}
 }
 \value{
-A ggplot object
+A \code{ggplot} object: a bar plot where the bars show
+  the **mean percent height** of the edited base, grouped by
+  whether the edit was statistically significant (\code{sig}).
+  Individual data points are shown, and the plot is faceted by
+  the specific edited base (\code{base}).
 }
 \description{
-Plot statistics in the tested wt bases
+Generates a \code{ggplot} bar plot visualizing the mean percentage
+height of the edited base (e.g., T for C-to-T) at all targeted
+wild-type positions. Points for individual base positions are
+overlaid, and the data is faceted by the edited base.
+}
+\examples{
+# This requires a full analysis result object, 'fit', from a
+# function like detect_edits().
+# plot_editing_barplot(fit_object)
 }

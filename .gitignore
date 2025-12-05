@@ -1,0 +1,11 @@
+*.Rproj
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+inst/doc
+**/.quarto/
+vignettes/*.html
+vignettes/*.R
+vignettes/*_files
+test.R

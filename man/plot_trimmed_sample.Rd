@@ -2,16 +2,32 @@
 % Please edit documentation in R/utils.R
 \name{plot_trimmed_sample}
 \alias{plot_trimmed_sample}
-\title{Plot the primary call percentage just in the non-trimmed data}
+\title{Plot Trimmed Sample Primary Call Percentage and Motif Location}
 \usage{
 plot_trimmed_sample(fit)
 }
 \arguments{
-\item{fit}{the result of detect_edits}
+\item{fit}{The \code{list} object resulting from a base editor
+analysis function (e.g., \code{detect_edits}), which contains
+the intermediate processed data.}
 }
 \value{
-A ggplot object
+A \code{ggplot} object showing:
+  \itemize{
+    \item A line plot of the percent noise (y-axis) across the
+      position in the sequence (x-axis).
+    \item Vertical bars (\code{geom_bar}) at motif positions,
+      used for highlighting, where the bar height is 100.
+  }
 }
 \description{
-Plot the primary call percentage just in the non-trimmed data
+Generates a \code{ggplot} object to visualize the **percent noise**
+(100% minus the primary base call percentage) for the Sanger
+sequence data that passed the trimming quality filters. It also
+highlights the locations of the aligned editing motif(s).
+}
+\examples{
+# This requires a full analysis result object, 'fit', from a
+# function like detect_edits().
+# plot_trimmed_sample(fit_object)
 }

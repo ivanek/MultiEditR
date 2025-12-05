@@ -2,7 +2,7 @@
 % Please edit documentation in R/detect_edits.R
 \name{detect_edits}
 \alias{detect_edits}
-\title{the primary function to run edit detection.}
+\title{Detect Base Editing Events in Sanger Sequencing Data}
 \usage{
 detect_edits(
   sample_file,
@@ -16,43 +16,76 @@ detect_edits(
 )
 }
 \arguments{
-\item{sample_file}{path to the sample .ab1 file}
+\item{sample_file}{A \code{character} string path to the sample
+Sanger sequence file (\code{.ab1}).}
 
-\item{ctrl_file}{path to the control .ab1 or .fa(sta) file}
+\item{ctrl_file}{A \code{character} string path to the control
+sequence file (\code{.ab1} or \code{.fa}).}
 
-\item{motif}{string holding the motif of interest}
+\item{motif}{A \code{character} string holding the motif of interest.}
 
-\item{motif_fwd}{boolean, true if the motif should be in the control as-is. False if the motif requires rev-com.}
+\item{motif_fwd}{A \code{logical}. If \code{TRUE} (default), the
+motif is matched as-is; if \code{FALSE}, its reverse complement
+is used for matching against the control.}
 
-\item{wt}{the base to be tested for editing in motif locations}
+\item{wt}{A \code{character} string specifying the wild-type base
+(e.g., "C") to be tested for editing in motif locations.}
 
-\item{edit}{the predicted edit for the base}
+\item{edit}{A \code{character} string specifying the predicted
+edited base (e.g., "T" for C-to-T).}
 
-\item{phred_cutoff}{the cutoff for trimming. lower is more stringent. default = 0.001}
+\item{phred_cutoff}{A \code{numeric} cutoff for Mott trimming.
+Lower values are more stringent. Default is \code{0.00001}.}
 
-\item{p_value}{the cutoff for BH-adjusted significance.}
+\item{p_value}{A \code{numeric} cutoff for Benjamini-Hochberg
+adjusted significance. Default is \code{0.01}.}
 }
 \value{
-A multiEditR object (list of lists)
+A \code{list} of class \code{multieditR} containing the
+  full analysis results, sequences, and intermediate data,
+  including \code{sample_data} (the primary results table),
+  \code{statistical_parameters} (ZAGA fits), and sequencing
+  objects.
 }
 \description{
-the primary function to run edit detection.
+The primary function for detecting and quantifying base editing events
+by aligning a sample sequence to a control sequence, identifying
+target motif locations, and using a Zero-Adjusted Gamma (ZAGA)
+distribution model to establish a null distribution for background
+noise, followed by p-value calculation and adjustment for edits.
+}
+\details{
+The algorithm performs the following key steps:
+1. Load sample and control sequences, applying reverse complement
+   to the control if it improves alignment score with the sample.
+2. Perform global pairwise alignment to map control positions onto
+   sample positions.
+3. Use Mott's algorithm to determine and flag low-quality regions
+   for trimming in the sample.
+4. Find all perfect matches of the target \code{motif} in the control
+   sequence.
+5. Use non-motif and non-trimmed sample data to fit the ZAGA
+   distribution for base-specific noise (the "null distribution").
+6. Calculate BH-adjusted p-values for all wild-type (\code{wt}) to
+   edited (\code{edit}) base transitions at motif locations.
 }
 \examples{
+# Use package-supplied example files
+sample_file <- system.file("extdata", "RP272_cdna_wt.ab1",
+  package = "MultiEditR")
+ctrl_file <- system.file("extdata", "RP272_cdna_ko.ab1",
+  package = "MultiEditR")
+motif <- "AGTAGCTGGGATTACAGATG"
+fit <- detect_edits(sample_file, ctrl_file,
+  motif = motif, motif_fwd = TRUE,
+  wt = "A", edit = "G",
+  phred_cutoff = 0.001, p_value = 0.05)
 
-sample_file = system.file("extdata", "RP272_cdna_wt.ab1", package="multiEditR")
-ctrl_file = system.file("extdata", "RP272_cdna_ko.ab1", package="multiEditR")
-motif = "AGTAGCTGGGATTACAGATG"
-fit = detect_edits(sample_file, ctrl_file,
-            motif = motif, motif_fwd = TRUE,
-            wt = "A", edit = "G",
-            phred_cutoff = 0.001, p_value = 0.05)
-            
-tbl = results(fit)
-writexl::write_xlsx(tbl, "my_results.xlsx") 
+# Access primary results table:
+tbl <- results(fit)
+# writexl::write_xlsx(tbl, file.path(tempdir(), "my_results.xlsx")) 
 
+# Plot visualizations:
 plot_sample_chromatogram(fit)
-plot_raw_sample(fit)       
-            
-
+plot_raw_sample(fit) 
 }

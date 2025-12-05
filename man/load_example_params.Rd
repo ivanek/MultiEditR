@@ -2,13 +2,20 @@
 % Please edit documentation in R/detect_edits_batch.R
 \name{load_example_params}
 \alias{load_example_params}
-\title{load an example parameters table}
+\title{Load an Example Parameters Table}
 \usage{
 load_example_params()
 }
 \value{
-A dataframe
+A \code{data.frame} containing the example parameters
+  with absolute paths to the sample and control files in the
+  package's \code{extdata} directory.
 }
 \description{
-load an example parameters table
+Loads the pre-packaged example parameters table provided with the
+\code{MultiEditR} package, automatically setting the correct
+paths for the example sequence files.
+}
+\examples{
+example_params <- load_example_params()
 }

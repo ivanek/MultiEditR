@@ -2,16 +2,33 @@
 % Please edit documentation in R/utils.R
 \name{plot_control_chromatogram}
 \alias{plot_control_chromatogram}
-\title{Plot the chromatogram + percentage tiles for all detected motifs in the control}
+\title{Plot the Chromatogram and Percentage Tiles for Detected Motifs in the Control}
 \usage{
 plot_control_chromatogram(fit)
 }
 \arguments{
-\item{fit}{the result of detect_edits}
+\item{fit}{The \code{list} object resulting from a base editor
+analysis function (e.g., \code{detect_edits}). This object must
+contain the \code{ctrl_sanger}, \code{motif}, \code{motif_fwd},
+\code{ctrl_is_revcom}, and \code{intermediate_data$raw_sample_df}
+slots.}
 }
 \value{
-A ggplot object
+A \code{ggplot} object showing the raw chromatogram trace
+  and the base percentage tiling for all detected motifs in the
+  control sequence. If the control was provided as a FASTA (\code{.fa})
+  file instead of an ABIF (\code{.ab1}) file, an empty plot with a
+  message is returned.
 }
 \description{
-Plot the chromatogram + percentage tiles for all detected motifs in the control
+A wrapper function that generates a combined visualization of the **raw
+control Sanger trace** and the base call percentage tiles, specifically
+zoomed in on all regions where the target motif was detected. This allows
+for visual confirmation of the control sequence quality and base calls
+within the context of the editing motif.
+}
+\examples{
+# This requires a full analysis result object, 'fit', from a
+# function like detect_edits().
+# plot_control_chromatogram(fit_object)
 }

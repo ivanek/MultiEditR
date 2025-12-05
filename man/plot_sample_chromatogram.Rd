@@ -2,16 +2,29 @@
 % Please edit documentation in R/utils.R
 \name{plot_sample_chromatogram}
 \alias{plot_sample_chromatogram}
-\title{Plot the chromatogram + percentage tiles for all detected motifs in the sample}
+\title{Plot the Chromatogram and Percentage Tiles for Detected Motifs}
 \usage{
 plot_sample_chromatogram(fit)
 }
 \arguments{
-\item{fit}{the result of detect_edits}
+\item{fit}{The \code{list} object resulting from a base editor
+analysis function (e.g., \code{detect_edits}). This object must
+contain the \code{sample_sanger}, \code{motif}, \code{motif_fwd},
+and \code{intermediate_data$raw_sample_df} slots.}
 }
 \value{
-A ggplot object
+A \code{ggplot} object showing the raw chromatogram trace
+  and the base percentage tiling for all detected motifs.
 }
 \description{
-Plot the chromatogram + percentage tiles for all detected motifs in the sample
+A convenience wrapper function that takes the full analysis result
+object and calls \code{plot_chromatogram_at_motif} to generate a
+combined visualization of the raw Sanger trace and the base call
+percentage tiles, specifically zoomed in on all regions where the
+target motif was detected in the sample sequence.
+}
+\examples{
+# This requires a full analysis result object, 'fit', from a
+# function like detect_edits().
+# plot_sample_chromatogram(fit_object)
 }

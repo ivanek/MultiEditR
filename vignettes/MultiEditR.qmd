@@ -1,0 +1,26 @@
+---
+title: "How to Identify Base Edits From Sanger Sequencing Data"
+vignette: >
+  %\VignetteIndexEntry{How to Identify Base Edits From Sanger Sequencing Data}
+  %\VignetteEngine{quarto::html}
+  %\VignetteEncoding{UTF-8}
+knitr:
+  opts_chunk:
+    collapse: true
+    comment: '#>'
+---
+
+```{r}
+#| label: setup
+library(MultiEditR)
+```
+
+
+## Session Info
+
+```{r}
+#| label: sessioninfo
+
+sessionInfo()
+```
+

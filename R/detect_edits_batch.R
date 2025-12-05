@@ -1,174 +1,279 @@
-# detect_edits_batch.R
-
-###########################################################################################
-# Written by Jeremy Chacon and Mitchell Kluesner
-#  
-# This file is part of multiEditR (Multiple Edit Deconvolution by Inference of Traces in R)
-# 
-# Please only copy and/or distribute this script with proper citation of 
-# multiEditR publication
-###########################################################################################
-#' @export
+#' Load Parameters from an Excel File
+#'
+#' Reads an Excel file containing the parameters required for base
+#' editing detection and standardizes the column names. The first
+#' seven columns are expected to be in a specific order.
+#'
+#' @param path A \code{character} string specifying the readable
+#'   file path to the Excel parameters spreadsheet (e.g.,
+#'   \code{"params.xlsx"}).
+#' @return A \code{data.frame} where the first seven column names
+#'   are set to \code{"sample_name"}, \code{"sample_file"},
+#'   \code{"ctrl_file"}, \code{"motif"}, \code{"motif_fwd"},
+#'   \code{"wt"}, and \code{"edit"}.
 #' @importFrom readxl read_excel
-load_parameters_file = function(path){
-  x = readxl::read_excel(path)
-  colnames(x)[1:7] =  c("sample_name", "sample_file", "ctrl_file", "motif",
-                  "motif_fwd","wt", "edit")
-  x
+#' @export
+#' @examples
+#' # Assuming "path/to/params.xlsx" exists and has the correct format.
+#' # params_df <- load_parameters_file("path/to/params.xlsx")
+load_parameters_file <- function(path){
+    params <- readxl::read_excel(path)
+    fixed_names <- c("sample_name", "sample_file", "ctrl_file", 
+                     "motif", "motif_fwd", "wt", "edit")
+    colnames(params)[seq_along(fixed_names)] <- fixed_names
+    params
 }
 
-#' load an example parameters table
-#' 
-#' @return A dataframe
+#' Load an Example Parameters Table
+#'
+#' Loads the pre-packaged example parameters table provided with the
+#' \code{MultiEditR} package, automatically setting the correct
+#' paths for the example sequence files.
+#'
+#' @return A \code{data.frame} containing the example parameters
+#'   with absolute paths to the sample and control files in the
+#'   package's \code{extdata} directory.
 #' @export
-load_example_params = function(){
-  params = load_parameters_file(paste0(system.file("extdata", package = "multiEditR"), "/parameters.xlsx"))
-  ext_path = system.file("extdata", package = "multiEditR")
-  params$sample_file = paste0(ext_path, "/", params$sample_file)
-  params$ctrl_file = paste0(ext_path, "/", params$ctrl_file)
-  params
+#' @examples
+#' example_params <- load_example_params()
+load_example_params <- function(){
+    ext_path <- system.file("extdata", package = "MultiEditR")
+    params <- load_parameters_file(file.path(ext_path, "parameters.xlsx"))
+    params$sample_file <- file.path(ext_path, params$sample_file)
+    params$ctrl_file <- file.path(ext_path, params$ctrl_file)
+    params
 }
 
-#' Saves an example parameters excel spreadsheet at the given location
-#' 
-#' @param path A writable file path, e.g. params.xlsx
-#' @export
+#' Save an Example Parameters Excel Spreadsheet
+#'
+#' Loads the example parameters table using \code{load_example_params}
+#' and writes it to a specified file path as an Excel spreadsheet.
+#' This is useful for users to modify a template parameter file.
+#'
+#' @param path A \code{character} string specifying the writable
+#'   file path where the Excel spreadsheet should be saved (e.g.,
+#'   \code{"my_params.xlsx"}).
+#' @return The function **invisibly returns the path** to the created Excel file.
+#'   Its main effect is writing the file to disk at the specified path.
 #' @importFrom writexl write_xlsx
-save_batch_skeleton = function(path){
-  params = load_example_params()
-  writexl::write_xlsx(params, path)
+#' @export
+#' @examples
+#' # Save the example parameters to a temporary file:
+#' # save_example_params(file.path(tempdir(), "template_params.xlsx"))
+save_example_params <- function(path){
+    params <- load_example_params()
+    writexl::write_xlsx(params, path)
 }
 
-#' run edit detection over multiple samples
-#' @param params A data.frame with the following columns: sample_file, control_file,
-#' motif, motif_fwd, wt, edit, phred_cutoff, p_value. see multiEditR::detect_edits for details.
-#' 
-#' @return A list of multiEditR objects
+#' Run Base Edit Detection Over Multiple Samples in Batch
+#'
+#' Executes the base edit detection process (\code{detect_edits}) for
+#' multiple samples defined in a parameter table or Excel file.
+#' This function leverages \code{BiocParallel} for parallel processing
+#' to speed up the analysis of many samples.
+#'
+#' @param params A \code{data.frame} or a \code{character} string
+#'   specifying the path to an Excel file (\code{.xlsx}) containing
+#'   the input parameters. The data frame must include the following
+#'   columns: \code{sample_name}, \code{sample_file}, \code{ctrl_file},
+#'   \code{motif}, \code{motif_fwd}, \code{wt}, and \code{edit}.
+#'   Optional columns include \code{p_value} and \code{phred_cutoff}.
+#'   See \code{load_example_params} for the required format.
+#' @param BPPARAM A \code{BiocParallel::bpparam()} object specifying
+#'   the parallel execution environment (e.g., number of cores).
+#'   Default is the object returned by \code{BiocParallel::bpparam()}.
+#' @return A \code{list} of \code{MultiEditR} objects, one for each
+#'   row in the \code{params} table. If an analysis fails for a
+#'   specific sample, the corresponding list element will contain
+#'   an error message and the flag \code{completed = FALSE}.
+#' @import BiocParallel
+#' @importFrom  methods is
 #' @export
-detect_edits_batch = function(params = NULL){
-  if (is.null(params)){
-    cat("detect_edits_batch must get a params dataframe, or the path to an xlsx file which can be coerced to the correctly formatted data.frame. 
+#' @examples
+#' # 1. Create a parameter file (if one does not exist)
+#' param_path <- file.path(tempdir(), "batch_params.xlsx")
+#' # save_example_params(param_path)
+#'
+#' # 2. Load the parameters data frame
+#' # params_df <- load_parameters_file(param_path)
+#'
+#' # 3. Run the batch detection (use default BPPARAM for safety)
+#' # results_list <- detect_edits_batch(params = params_df)
+#'
+#' # View results for the first sample:
+#' # results(results_list[[1]])
+detect_edits_batch <- function(params = NULL, 
+                               BPPARAM=BiocParallel::bpparam()) {
+    if (is.null(params)) {
+        stop("detect_edits_batch requires a parameters data.frame")
+    }
     
-    To save an example xlsx spreadsheet, 
-         use save_batch_skeleton('path/to/save/spreadsheet')
-         
-    The dataframe needs the following columns:
-         sample_name : 'name of this sample'
-         sample_file : /full/path/to/sample/ab1
-         ctrl_file : /full/path/to/control/ab1/or/fasta
-         motif : sequence/to/look/for/edits/within
-         wt : base to be edited
-         edit: base the wt should have become
-         
-    Optional Column (must be named exactly):
-        p_value : threshold for significant edits
-        phred_cutoff : threshold
-
-   The dataframe should look like this:
-   
-  sample_name sample_file       ctrl_file           motif                motif_fwd wt    edit  p_value
-  <chr>       <chr>             <chr>               <chr>                <lgl>     <chr> <chr> <dbl>
-1 Test1       RP272_cdna_wt.ab1 RP272_cdna_ko.ab1   AGTAGCTGGGATTACAGATG TRUE      A     G     0.01
-2 Test2       RP272_cdna_wt.ab1 RP272_cdna_ko.fasta AGTAGCTGGGATTACAGATG TRUE      A     G     0.01
-3 Test3       RP272_cdna_wt.ab1 RP272_cdna_ko.ab1   CGTATTTTTGTTAGAGATGG TRUE      A     G     0.01")
-    stop("detect_edits_batch requires a parameters dataframe")
-  }
-  
-  if (length(class(params)) == 1 && class(params) == "character"){
-    message("params is a string, assuming it is a path to an xlsx sheet containing the parameters. attempting to load. ")
-    params = load_parameters_file(params)
-  }
-  
-  fits = lapply(1:nrow(params),
-                FUN = function(i){
-                  tryCatch({
-                    fit = detect_edits(sample_file = params$sample_file[i],
-                                       ctrl_file = params$ctrl_file[i],
-                                       motif = params$motif[i],
-                                       wt = params$wt[i],
-                                       edit = params$edit[i],
-                                       motif_fwd = ifelse(is.null(params$motif_fwd[i]), TRUE, params$motif_fwd[i]),
-                                       p_value = ifelse(is.null(params$p_value[i]), 0.01, params$p_value[i]),
-                                       phred_cutoff = ifelse(is.null(params$phred_cutoff[i]), 0.001, params$phred_cutoff[i])
+    if (length(class(params)) == 1 && is(params, "character")){
+        message("params is a string, assuming it is a path",
+                "to an xlsx sheet containing the parameters.",
+                "Attempting to load. ")
+        params <- load_parameters_file(params)
+    }
+    
+    fits <- BiocParallel::bplapply(seq_len(nrow(params)),
+                                   FUN = function(i) { tryCatch( {
+                                       fit <- detect_edits(sample_file = params$sample_file[i],
+                                                           ctrl_file = params$ctrl_file[i],
+                                                           motif = params$motif[i],
+                                                           wt = params$wt[i],
+                                                           edit = params$edit[i],
+                                                           motif_fwd = ifelse(is.null(params$motif_fwd[i]), TRUE, params$motif_fwd[i]),
+                                                           p_value = ifelse(is.null(params$p_value[i]), 0.01, params$p_value[i]),
+                                                           phred_cutoff = ifelse(is.null(params$phred_cutoff[i]), 0.001, params$phred_cutoff[i])
                                        )
-                    fit$sample_data$sample_name = params$sample_name[i]
-                    fit$statistical_parameters$sample_name = params$sample_name[i]
-                    fit$sample_name = params$sample_name[i]
-                    fit$completed = TRUE
-                    fit
-                    },
-                    error = function(e){
-                      list(sample_name = params$sample_name[i],
-                           completed = FALSE,
-                           error = e)
-                    })
-                 })
-  fits
+                                       fit$sample_data$sample_name <- params$sample_name[i]
+                                       fit$statistical_parameters$sample_name <- params$sample_name[i]
+                                       fit$sample_name <- params$sample_name[i]
+                                       fit$completed <- TRUE
+                                       return(fit)
+                                   },
+                                   error = function(e){
+                                       list(sample_name = params$sample_name[i],
+                                            completed = FALSE,
+                                            error = e)
+                                   })
+                                   }, BPPARAM = BPPARAM)
+    return(fits)
 }  
 
-#' get a single dataframe containing all test results
-#' 
-#' @param fits The result of multiEditR::detect_edits_batch 
-#' @return A data.frame
+#' Get a Single Data Frame Containing All Batch Test Results
+#'
+#' Consolidates the primary results table (\code{sample_data}) from
+#' a list of successful \code{MultiEditR} objects (the output of
+#' \code{detect_edits_batch}) into a single, comprehensive \code{data.frame}.
+#' Samples that failed the analysis are automatically excluded.
+#'
+#' @param fits The \code{list} of \code{MultiEditR} objects returned
+#'   by \code{detect_edits_batch}.
+#' @return A consolidated \code{data.frame} containing all key
+#'   results across all successful samples, including the sample
+#'   name, motif details, editing significance, p-values, and base
+#'   percentages. The columns are renamed for clarity:
+#'   \itemize{
+#'     \item \code{target_position_in_motif}: Position relative to the motif.
+#'     \item \code{position_in_sample_trace}: Position in the raw sample trace.
+#'     \item \code{sample_max_base}: The primary called base in the sample.
+#'     \item \code{sample_secondary_base}: The secondary called base in the sample.
+#'     \item \code{expected_base}: The expected wild-type base at the site.
+#'   }
+#' @importFrom dplyr mutate select tibble bind_rows
+#' @importFrom plyr ldply 
 #' @export
-#' @importFrom magrittr `%>%`
-#' @importFrom dplyr mutate select tibble
-#' @importFrom plyr ldply
-get_batch_results_table = function(fits){
-  # toss fits which failed
-  fits = fits[sapply(fits, FUN = function(x){x$completed})]
-  tbl = data.frame()
-  for (fit in fits){
-    tbl = rbind(tbl,
-                fit[[1]] %>%
-                  dplyr::mutate(target_position_in_motif = target_base) %>%
-                  dplyr::mutate(position_in_sample_trace = index) %>%
-                  dplyr::mutate(sample_max_base = max_base) %>%
-                  dplyr::mutate(sample_secondary_base = sample_secondary_call) %>%
-                  dplyr::select(sample_name, passed_trimming, target_position_in_motif, motif, 
-                                expected_base, ctrl_max_base, sample_max_base, sample_secondary_base,
-                                edit_sig, edit_pvalue, edit_padjust, A_perc, C_perc, G_perc, T_perc, sample_file))
-  }
-  tbl
+#' @examples
+#' # Requires a list of fit objects from a prior batch analysis:
+#' # results_list <- detect_edits_batch(params_df)
+#' # batch_table <- get_batch_results_table(results_list)
+get_batch_results_table <- function(fits){
+    # local definitions
+    index <- target_base <- max_base <- NULL
+    sample_name <- sample_file <- NULL
+    sample_secondary_call <- sample_secondary_base <- NULL
+    motif <- passed_trimming <- target_position_in_motif <- NULL
+    expected_base <- ctrl_max_base <- sample_max_base <- NULL
+    edit_sig <- edit_pvalue <- edit_padjust <- NULL
+    A_perc <- C_perc <- G_perc <- T_perc <- NULL
+    
+    # toss fits which failed
+    fits <- fits[vapply(fits, FUN = "[[", "completed", FUN.VALUE = logical(1))]
+    
+    tbl <- list()
+    for (n in seq_along(fits)) {
+        tbl[[n]] <- fits[[n]][[1]] |>
+                         dplyr::mutate(target_position_in_motif = target_base) |>
+                         dplyr::mutate(position_in_sample_trace = index) |>
+                         dplyr::mutate(sample_max_base = max_base) |>
+                         dplyr::mutate(sample_secondary_base = sample_secondary_call) |>
+                         dplyr::select(sample_name, passed_trimming, target_position_in_motif, motif, 
+                                       expected_base, ctrl_max_base, sample_max_base, sample_secondary_base,
+                                       edit_sig, edit_pvalue, edit_padjust, A_perc, C_perc, G_perc, T_perc, sample_file)
+    }
+    tbl <- dplyr::bind_rows(tbl)
+    return(tbl)
 }
 
-#' get a single dataframe containing all test critical statistics
-#' 
-#' @param fits The result of multiEditR::detect_edits_batch 
-#' @return A data.frame
-#' @export
-#' @importFrom magrittr `%>%`
-#' @importFrom dplyr mutate select
+#' Get a Single Data Frame Containing All Batch Critical Statistics
+#'
+#' Consolidates the **Filliben correlation coefficients** from the
+#' statistical noise modeling (\code{statistical_parameters}) for
+#' all successful samples processed in a batch. The Filliben
+#' coefficient measures the linearity of the residuals' QQ-plot
+#' and indicates the goodness-of-fit of the ZAGA model to the
+#' background noise.
+#'
+#' @param fits The \code{list} of \code{MultiEditR} objects returned
+#'   by \code{detect_edits_batch}. Only samples flagged as
+#'   \code{completed = TRUE} are included.
+#' @return A consolidated \code{data.frame} where each row
+#'   corresponds to a successful sample, and the columns show the
+#'   Filliben correlation coefficient for each base's ZAGA model
+#'   (e.g., \code{A fillibens coef.}, \code{C fillibens coef.}, etc.).
+#' @importFrom dplyr mutate select bind_rows
 #' @importFrom tidyr pivot_wider
-#' @importFrom plyr ldply
-get_batch_stats_table = function(fits){
-  
-  # toss fits which failed
-  fits = fits[sapply(fits, FUN = function(x){x$completed})]
-  tbl = data.frame()
-  for (fit in fits){
-    tbl = rbind(tbl,
-                fit[[2]] %>%
-                  dplyr::mutate(base = paste0(base, " fillibens coef.")) %>%
-                  dplyr::select(sample_name, base, fillibens) %>%
-                  tidyr::pivot_wider(names_from = base, values_from = fillibens))
-  }
-  tbl
+#' @importFrom plyr ldply 
+#' @export
+#' @examples
+#' # Requires a list of fit objects from a prior batch analysis:
+#' # results_list <- detect_edits_batch(params_df)
+#' # stats_table <- get_batch_stats_table(results_list)
+get_batch_stats_table <- function(fits) {
+    # local definitions
+    base <- sample_name <- fillibens <- NULL
+    
+    # toss fits which failed
+    fits <- fits[vapply(fits, FUN = "[[", "completed", FUN.VALUE = logical(1))]
+    
+    tbl <- list()
+    for (n in seq_along(fits)) {
+        tbl <- fits[[n]][[2]] |>
+                         dplyr::mutate(base = paste0(base, " fillibens coef.")) |>
+                         dplyr::select(sample_name, base, fillibens) |>
+                         tidyr::pivot_wider(names_from = base, values_from = fillibens)
+    }
+    tbl <- bind_rows(tbl)
+    
+    return(tbl)
 }
 
-#' Creates an html report similar to the shiny app
-#' 
-#' @param batch_results The result of multiEditR::detect_edits_batch 
-#' @param params The parameters dataframe given to multiEditR::detect_edits_batch 
-#' @param path The file to write the html
+#' Create an HTML Batch Report for MultiEditR Results
+#'
+#' Generates a comprehensive HTML report summarizing the results of a
+#' batch base editing analysis performed by \code{detect_edits_batch}.
+#' The report uses an R Markdown template to include summary tables,
+#' statistics, and visualizations similar to the package's Shiny app.
+#'
+#' @param batch_results The \code{list} of \code{MultiEditR} objects
+#'   returned by \code{detect_edits_batch}.
+#' @param params The \code{data.frame} of input parameters that was
+#'   originally provided to \code{detect_edits_batch}.
+#' @param path A \code{character} string specifying the file path and
+#'   name for the output HTML report. Defaults to
+#'   \code{"./multiEditR_batch_results.html"}.
 #' @export
+#' @return The function invisibly returns the file path of the
+#'   generated HTML report. It primarily creates the file on disk.
 #' @importFrom rmarkdown render
-create_multiEditR_report = function(batch_results, params, path = "./multiEditR_batch_results.html"){
-  message("rendering document, this could take a couple of minutes. When it is done, open the html in a web browser.")
-  template = paste0(system.file(package = "multiEditR"), "/batch_report_template.Rmd")
-  rmarkdown::render(template,
-                    params = list(params.tbl = params,
-                                  results.list = batch_results),
-                    output_dir = getwd(),
-                    output_file = path, envir = new.env())
+#' @examples
+#' # Requires a list of fit objects and the original parameters:
+#' # results_list <- detect_edits_batch(params_df)
+#' # report_path <- file.path(tempdir(), "my_analysis_report.html")
+#' # create_MultiEditR_report(results_list, params_df, path = report_path)
+create_MultiEditR_report <- function(batch_results, params, 
+                                     path = "./multiEditR_batch_results.html") {
+    
+    template <- system.file(package = "MultiEditR", "batch_report_template.Rmd")
+    
+    message("Rendering document, this could take a couple of minutes. ",
+            "When it is done, open the html in a web browser.")
+    
+    rmarkdown::render(template,
+                      params = list(params.tbl = params,
+                                    results.list = batch_results),
+                      output_dir = dirname(path),
+                      output_file = basename(path), 
+                      envir = new.env())
 }

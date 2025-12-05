@@ -2,29 +2,55 @@
 % Please edit documentation in R/utils.R
 \name{results}
 \alias{results}
-\title{Get complete fit results}
+\title{Get Complete Base Editor Fit Results}
 \usage{
 results(fit)
 }
 \arguments{
-\item{fit}{the result of detect_edits}
+\item{fit}{A \code{list} object, the result of a base editor
+analysis function like \code{detect_edits}, containing both
+raw and intermediate processed data.}
 }
 \value{
-A dataframe with the following columns:
-raw_sample_position - position in the sample sanger
-passed_trimming - whether the sample sanger passed trimming (TRUE) or was low quality (FALSE)
-motif_number - The numbered motif found in the control. -1 means not a match, 1 is the first match, 2 the second, etc.
-edit_sig - whether the WT was significantly changed
-control_base - The control sequence. Also serves as the motif sequence when motif_number > 0
-sample_primary_call - The highest defined peak in the sample
-sample_secondary_call - The second highest defined peak in the sample
-A-T_area - The maximum sample height of the base peak
-A-T_perc - The percent of this base peak's height over all bases
-edit_pvalue/adjust 
-motif_seq - the motif_seq as used. Meaning, if motif_fwd == FALSE, the rev-com of the motif you supplied
-sample_file
-control_file
+A \code{data.frame} containing the following columns:
+  \itemize{
+    \item \code{raw_sample_position}: Position in the sample sanger
+      sequence.
+    \item \code{passed_trimming}: \code{TRUE} if the sample sanger
+      sequence passed quality trimming, \code{FALSE} otherwise.
+    \item \code{motif_number}: The numbered motif match in the
+      control sequence. \code{-1} for no match, \code{1} for the
+      first match, etc.
+    \item \code{edit_sig}: \code{TRUE} if the wild-type base was
+      significantly changed based on the adjusted p-value.
+    \item \code{control_base}: The primary base call from the control
+      sequence. Also serves as the expected motif base when
+      \code{motif_number > 0}.
+    \item \code{expected_change}: The expected nucleotide change
+      (e.g., "C->T") at that position.
+    \item \code{sample_primary_call}: The highest defined peak in the
+      sample sequence.
+    \item \code{sample_secondary_call}: The second highest defined
+      peak in the sample sequence.
+    \item \code{A_area} to \code{T_area}: The maximum sample height
+      of each base peak.
+    \item \code{A_perc} to \code{T_perc}: The percent of each base
+      peak's height over the sum of all base heights.
+    \item \code{edit_pvalue}: The raw p-value for the base edit.
+    \item \code{edit_padjust}: The Benjamini-Hochberg adjusted
+      p-value for the base edit.
+    \item \code{motif_seq}: The motif sequence used for alignment.
+      If the reverse complement was used, this is the rev-com sequence.
+    \item \code{sample_file}: The file name of the sample sequence.
+    \item \code{control_file}: The file name of the control sequence.
+  }
 }
 \description{
-Get complete fit results
+Consolidates the raw sequencing data and the edit detection
+results into a single comprehensive data frame for final output.
+}
+\examples{
+# This requires a full analysis result object, 'fit', from a
+# function like detect_edits().
+# final_results <- results(fit_object)
 }

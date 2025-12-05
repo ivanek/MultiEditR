@@ -1,356 +1,595 @@
-# utils.R
+bases <- c("A", "C", "G", "T")
 
-###########################################################################################
-# Written by Jeremy Chacon and Mitchell Kluesner
-#  
-# This file is part of multiEditR (Multiple Edit Deconvolution by Inference of Traces in R)
-# 
-# Please only copy and/or distribute this script with proper citation of 
-# multiEditR publication
-###########################################################################################
+## Analysis ----
 
-bases = c("A", "C", "G", "T")
-ACGT = bases
-
-phred_scores = data.frame(stringsAsFactors=FALSE,
-                          phred = c("!", "“", "$", "%", "&", "‘", "(", ")", "*", "+", ",", "–",
-                                    ".", "/", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
-                                    ":", ";", "<", "=", ">", "?", "@", "A", "B", "C", "D", "E", "F",
-                                    "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S",
-                                    "T", "U", "V", "W", "X", "Y", "Z", "[", "\\", "]", "^", "_",
-                                    "`", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l",
-                                    "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y",
-                                    "z", "{", "|", "}", "~"),
-                          prob = c(1, 0.794328235, 0.501187234, 0.398107171, 0.316227766,
-                                   0.251188643, 0.199526232, 0.158489319, 0.125892541, 0.1,
-                                   0.079432824, 0.063095734, 0.050118723, 0.039810717, 0.031622777,
-                                   0.025118864, 0.019952623, 0.015848932, 0.012589254, 0.01,
-                                   0.007943282, 0.006309573, 0.005011872, 0.003981072, 0.003162278,
-                                   0.002511886, 0.001995262, 0.001584893, 0.001258925, 0.001, 0.000794328,
-                                   0.000630957, 0.000501187, 0.000398107, 0.000316228, 0.000251189,
-                                   0.000199526, 0.000158489, 0.000125893, 1e-04, 7.94328e-05,
-                                   6.30957e-05, 5.01187e-05, 3.98107e-05, 3.16228e-05, 2.51189e-05,
-                                   1.99526e-05, 1.58489e-05, 1.25893e-05, 1e-05, 7.9433e-06,
-                                   6.3096e-06, 5.0119e-06, 3.9811e-06, 3.1623e-06, 2.5119e-06, 1.9953e-06,
-                                   1.5849e-06, 1.2589e-06, 1e-06, 7.943e-07, 6.31e-07, 5.012e-07,
-                                   3.981e-07, 3.162e-07, 2.512e-07, 1.995e-07, 1.585e-07, 1.259e-07,
-                                   1e-07, 7.94e-08, 6.31e-08, 5.01e-08, 3.98e-08, 3.16e-08,
-                                   2.51e-08, 2e-08, 1.58e-08, 1.26e-08, 1e-08, 7.9e-09, 6.3e-09, 5e-09,
-                                   4e-09, 3.2e-09, 2.5e-09, 2e-09, 1.6e-09, 1.3e-09, 1e-09, 8e-10,
-                                   6e-10, 5e-10)
-)
-
-######
-### Analysis Functions
-######
-
-
-# Check that a string is IUPAC notation
-checkIUPAC = function(x){all(strsplit(x, "")[[1]] %in% c("A", "C", "G", "T", "U", "R", "Y", "S", "W", "K", "M", "B", "D", "H", "V", "N"))}
-
-# convert nucleotide to a factor
-nucleotide_factor = function(x){factor(x, levels = c("A", "C", "G", "T"))}
-
-# get_trim_points returns a vector of length 2, the first point
-# being the first position to be included, and the second being the second 
-# position to be included. It is modified from abif_to_fastq.
-# If the trimming would leave less than min_seq_len, it returns -1
-# similarly, if the sequence is already shorter than min_seq_len, it returns -1
+#' Get Trimming Points for an ABIF File
+#'
+#' Calculates the start and end positions for trimming a DNA sequence
+#' read from an ABIF file based on quality scores. This function is
+#' modified from \code{CrispRVariants::abif_to_fastq} and implements
+#' the Mott trimming algorithm.
+#'
+#' @param path A \code{character} string giving the path to the ABIF file.
+#' @param cutoff A \code{numeric} value representing the error probability
+#'   cutoff used for trimming. Default is \code{0.001}.
+#' @param min_seq_len An \code{integer} specifying the minimum length
+#'   the trimmed sequence must retain. If trimming would result in a
+#'   shorter sequence, \code{-1} is returned. Default is \code{20}.
+#' @return A \code{numeric} vector of length 2: the **first** position
+#'   to be included and the **last** position to be included. Returns
+#'   \code{-1} if the sequence cannot be trimmed to at least
+#'   \code{min_seq_len}. Returns \code{NULL} if the ABIF file is
+#'   invalid or could not be read.
 #' @importFrom sangerseqR read.abif
-get_trim_points = function (path, cutoff = 0.001,
-                            min_seq_len = 20, offset = 33)
-{
-  abif <- sangerseqR::read.abif(path)
-  if (is.null(abif@data$PCON.2)) {
-    message(sprintf("failed on %s", path))
-    return()
-  }
-  nucseq <- substring(abif@data$PBAS.2, 1, length(abif@data$PLOC.2))
-  if (!typeof(abif@data$PCON.2) == "integer") {
-    num_quals <- utf8ToInt(abif@data$PCON.2)[1:length(abif@data$PLOC.2)]
-  }else {
-    num_quals <- abif@data$PCON.2[1:length(abif@data$PLOC.2)]
-  }
-
-  trim_msg <- "Sequence %s can not be trimmed because it is shorter than the trim\n               segment size"
-  if (nchar(nucseq) <= min_seq_len) {
-    warning(sprintf(trim_msg, path))
-    return(-1)
-  }
-  scores = cutoff - 10^(num_quals/-10)
-  running_sum <- rep(0, length(scores) + 1)
-  for (i in 1:length(scores)) {
-    num <- scores[i] + running_sum[i]
-    running_sum[i + 1] <- ifelse(num < 0, 0, num)
-  }
-  trim_start <- min(which(running_sum > 0)) - 1
-  trim_finish <- which.max(running_sum) - 2
-  if (trim_finish - trim_start < min_seq_len - 1) {
-    warning(sprintf(trim_msg, path))
-    return(-1)
-  }
-  return(c(trim_start, trim_finish))
+#' @examples
+#' # Create a dummy file for example (replace with a real path)
+#' dummy_path <- tempfile(fileext = ".ab1")
+#' # get_trim_points(dummy_path)
+get_trim_points <- function (path, cutoff = 0.001,
+                             min_seq_len = 20) {
+    abif <- sangerseqR::read.abif(path)
+    if (is.null(abif@data$PCON.2)) {
+        message(sprintf("failed on %s", path))
+        return()
+    }
+    
+    # Remove the extra character if it exists
+    nucseq <- substring(abif@data$PBAS.2, 1, length(abif@data$PLOC.2))
+    
+    # sangerSeqR PCON.2 is a UTF8-encoded character vector in release, 
+    # an integer vector in devel
+    if (!typeof(abif@data$PCON.2) == "integer") {
+        num_quals <- utf8ToInt(abif@data$PCON.2)[seq_along(abif@data$PLOC.2)]
+    }else {
+        num_quals <- abif@data$PCON.2[seq_along(abif@data$PLOC.2)]
+    }
+    
+    trim_msg <- paste("Sequence %s can not be trimmed because",
+                      "it is shorter than the trim segment size")
+    if (nchar(nucseq) <= min_seq_len) {
+        warning(sprintf(trim_msg, path))
+        return(-1)
+    }
+    scores <- cutoff - 10^(num_quals/-10)
+    running_sum <- rep(0, length(scores) + 1)
+    
+    # Note running_sum counts from zero, scores from 1
+    for (i in seq_along(scores)) {
+        num <- scores[i] + running_sum[i]
+        running_sum[i + 1] <- ifelse(num < 0, 0, num)
+    }
+    trim_start <- min(which(running_sum > 0)) - 1
+    trim_finish <- which.max(running_sum) - 2
+    # -1 for running_sum offset, -1 because python doesn't include ends
+    
+    # Additional check that there is enough sequence (not in abifpy):
+    if (trim_finish - trim_start < min_seq_len - 1) {
+        warning(sprintf(trim_msg, path))
+        return(-1)
+    }
+    return(c(trim_start, trim_finish))
 }
 
-subchar <- function(string, pos, char) {
-  for(i in pos) {
-    substr(string, i, i) = char
-  }
-  string
-}
-
-#' @importFrom gamlss gamlss
-#' @importFrom dplyr filter
+#' Generate ZAGA Distribution Parameters for Noise Estimation
+#'
+#' Fits the Zero-Adjusted Gamma (ZAGA) distribution to the area
+#' values of non-maximally called bases (noise) for each nucleotide
+#' (A, C, G, T) across all positions in a Sanger sequencing data
+#' frame. This is used to model the background noise distribution.
+#'
+#' @param sanger_df A \code{data.frame} generated by
+#'   \code{make_sanger_df} containing base call areas and the
+#'   maximum called base (\code{max_base}). Must include columns:
+#'   \code{A_area}, \code{C_area}, \code{G_area}, \code{T_area},
+#'   and \code{max_base}.
+#' @param p_adjust A \code{numeric} value specifying the adjusted
+#'   p-value cutoff (e.g., corrected for multiple testing) used to
+#'   calculate the critical value (\code{crit}) from the fitted
+#'   ZAGA distribution.
+#' @param seed A \code{numeric} value specifying the seed before fitting 
+#'   \code{gamlss} models.
+#' @return A \code{data.frame} containing the fitted ZAGA
+#'   parameters (\eqn{\mu}, \eqn{\sigma}, \eqn{\nu}), the critical
+#'   value (\code{crit}), and the Filliben correlation coefficient
+#'   (\code{fillibens}) for the residuals for each base
+#'   (\code{base}).
+#' @importFrom stats p.adjust cor qqnorm
+#' @importFrom gamlss gamlss gamlss.control
+#' @importFrom dplyr filter bind_rows
 #' @importFrom gamlss.dist qZAGA
-#' @importFrom magrittr `%>%`
-make_ZAGA_df = function(sanger_df, p_adjust){
-  nvals <- list()
-  nvals$A = dplyr::filter(sanger_df, max_base != "A")$A_area
-  nvals$C = dplyr::filter(sanger_df, max_base != "C")$C_area
-  nvals$G = dplyr::filter(sanger_df, max_base != "G")$G_area
-  nvals$T = dplyr::filter(sanger_df, max_base != "T")$T_area
-
-  n_models =   n_models <-lapply(nvals, FUN = function(x){
-    set.seed(1)
-    if((unique(x)[1] == 0 & length(unique(x)) == 1) |
-       (unique(x)[1] == 0 & length(unique(x)) == 2 & table(x)[2] == 1))
-    {x = c(rep(0, 989), 0.00998720389310502, 0.00998813447664401,0.009992887520785,
-           0.00999585366068316, 0.00999623914632598, 0.00999799013526835, 0.010001499423723,
-           0.0100030237039207, 0.0100045782875701, 0.0100048452355807, 0.0100049548867042)
-    message("Replacement vector used for low noise.")
-    } # add noise if all 0s, or all 0s and one other value.
-    tryCatch(gamlss::gamlss((x)~1, family = gamlss.dist::ZAGA), error=function(e) # Progressively step up the mu.start if it fails
-      tryCatch(gamlss::gamlss((x)~1, family = gamlss.dist::ZAGA, mu.start = 1), error=function(e)
-        tryCatch(gamlss::gamlss((x)~1, family = gamlss.dist::ZAGA, mu.start = 2), error=function(e)
-          tryCatch(gamlss::gamlss((x)~1, family = gamlss.dist::ZAGA, mu.start = 3), error=function(e) # additional step added.
-            tryCatch(gamlss::gamlss((x)~1, family = gamlss.dist::ZAGA, mu.start = 4), error=function(e) # additional step added.
-              gamlss::gamlss((x)~1, family = gamlss.dist::ZAGA, mu.start = mean(x))
+#' @importFrom withr with_seed
+#' @examples
+#' # This example assumes 'sanger_data' is a pre-existing
+#' # data frame suitable for the 'sanger_df' argument.
+#' # df_params <- make_ZAGA_df(sanger_data, p_adjust = 0.05)
+make_ZAGA_df <- function(sanger_df, p_adjust, seed=1) {
+    # local definitions
+    max_base <- NULL
+    
+    nvals <- list()
+    nvals$A <- dplyr::filter(sanger_df, max_base != "A")$A_area
+    nvals$C <- dplyr::filter(sanger_df, max_base != "C")$C_area
+    nvals$G <- dplyr::filter(sanger_df, max_base != "G")$G_area
+    nvals$T <- dplyr::filter(sanger_df, max_base != "T")$T_area
+    
+    n_models <- withr::with_seed(seed, {
+        lapply(nvals, FUN = function(x) {
+            if((unique(x)[1] == 0 & length(unique(x)) == 1) |
+               (unique(x)[1] == 0 & length(unique(x)) == 2 & table(x)[2] == 1)) {
+                # add noise if all 0s, or all 0s and one other value.
+                x <- c(rep(0, 989), 0.00998720389310502, 0.00998813447664401,0.009992887520785,
+                       0.00999585366068316, 0.00999623914632598, 0.00999799013526835, 0.010001499423723,
+                       0.0100030237039207, 0.0100045782875701, 0.0100048452355807, 0.0100049548867042)
+                message("Replacement vector used for low noise.")
+            }
+            
+            tryCatch(gamlss::gamlss((x)~1, family = gamlss.dist::ZAGA, control=gamlss::gamlss.control(trace=FALSE)), error=function(e) # Progressively step up the mu.start if it fails
+                tryCatch(gamlss::gamlss((x)~1, family = gamlss.dist::ZAGA, mu.start = 1, control=gamlss::gamlss.control(trace=FALSE)), error=function(e)
+                    tryCatch(gamlss::gamlss((x)~1, family = gamlss.dist::ZAGA, mu.start = 2, control=gamlss::gamlss.control(trace=FALSE)), error=function(e)
+                        tryCatch(gamlss::gamlss((x)~1, family = gamlss.dist::ZAGA, mu.start = 3, control=gamlss::gamlss.control(trace=FALSE)), error=function(e) # additional step added.
+                            tryCatch(gamlss::gamlss((x)~1, family = gamlss.dist::ZAGA, mu.start = 4, control=gamlss::gamlss.control(trace=FALSE)), error=function(e) # additional step added.
+                                gamlss::gamlss((x)~1, family = gamlss.dist::ZAGA, mu.start = mean(x), control=gamlss::gamlss.control(trace=FALSE))
+                            )
+                        )
+                    )
+                )
             )
-          )
-        )
-      )
-    )
-    # throws errors when a completely 0 vector
-  })
-
-  null_m_params = lapply(n_models, FUN = function(x){
-    mu <- exp(x$mu.coefficients[[1]])
-    sigma <- exp(x$sigma.coefficients[[1]])
-    nu.logit <- x$nu.coefficients[[1]]
-    nu <- exp(nu.logit)/(1+exp(nu.logit))
-    fillibens <-cor(as.data.frame(qqnorm(x$residuals, plot = FALSE)))[1,2]
-    crit = gamlss.dist::qZAGA(p = 1-p_adjust, mu = mu, nu = nu, sigma = sigma)
-
-    return(data.frame(mu= mu, sigma = sigma, nu = nu, crit = crit, fillibens = fillibens))
-  })
-
-  null_m_params %>%
-    plyr::ldply(., "data.frame") %>%
-    dplyr::rename(base = `.id`) %>%
-    return()
+            # throws errors when a completely 0 vector
+        })
+    })
+    
+    null_m_params <- lapply(n_models, FUN = function(x) {
+        mu <- exp(x$mu.coefficients[[1]])
+        sigma <- exp(x$sigma.coefficients[[1]])
+        nu.logit <- x$nu.coefficients[[1]]
+        nu <- exp(nu.logit)/(1+exp(nu.logit))
+        fillibens <- cor(as.data.frame(qqnorm(x$residuals, plot = FALSE)))[1,2]
+        crit <- gamlss.dist::qZAGA(p = 1-p_adjust, mu = mu, nu = nu, sigma = sigma)
+        
+        return(data.frame(mu = mu, sigma = sigma, nu = nu, 
+                          crit = crit, fillibens = fillibens))
+    })
+    
+    null_m_params <- null_m_params |>
+        dplyr::bind_rows(.id="base")
+    
+    return(null_m_params)
 }
 
-neg_to_zero = function(x){ifelse(x < 0, 0, x)}
-
-### Adjust the height and percent values based on GBM and the significance
+#' Calculate and Adjust P-values for Base Editor Off-Target Sites
+#'
+#' Filters the sanger data frame for bases of interest (BOI),
+#' calculates the p-value for each base's area using the fitted
+#' Zero-Adjusted Gamma (ZAGA) distribution (representing noise),
+#' applies Benjamini-Hochberg (BH) correction, and determines
+#' statistical significance based on a defined cutoff.
+#'
+#' @param sanger_df A \code{data.frame} containing sanger sequencing
+#'   data, including base call areas (\code{A_area} to \code{T_area}),
+#'   percentages (\code{A_perc} to \code{T_perc}), and control base
+#'   information (\code{ctrl_max_base}).
+#' @param wt A \code{character} string representing the wild-type
+#'   base or bases (e.g., 'C' or 'GA') to filter for.
+#' @param boi A \code{character} string listing the base(s) of
+#'   interest (e.g., 'G' for a C-to-T editor acting on the opposite
+#'   strand, looking for G to A).
+#' @param motif A \code{character} string identifying the editing
+#'   motif used, added as a final column.
+#' @param sample_file A \code{character} string identifying the
+#'   sample file name, added as a final column.
+#' @param critical_values A \code{data.frame} of critical values
+#'   (though not used in the current function logic, it is
+#'   retained for compatibility).
+#' @param zaga_parameters A \code{data.frame} of fitted ZAGA
+#'   distribution parameters (\eqn{\mu}, \eqn{\sigma}, \eqn{\nu}, 
+#'   \code{crit}) for each base, generated by \code{make_ZAGA_df}.
+#' @param p_value A \code{numeric} significance cutoff (e.g., 0.05)
+#'   to determine significance after p-value adjustment.
+#' @return A \code{data.frame} filtered and augmented with raw
+#'   p-values (\code{A_pvalue} to \code{T_pvalue}), BH-adjusted
+#'   p-values (\code{A_p_adjust} to \code{T_p_adjust}), and
+#'   columns indicating significance both raw (\code{A_sig} to
+#'   \code{T_sig}) and adjusted (\code{A_sig_adjust} to
+#'   \code{T_sig_adjust}).
 #' @importFrom dplyr filter select mutate 
-#' @importFrom magrittr `%>%`
-pvalue_adjust = function(sanger_df, wt, boi, motif, sample_file, critical_values, zaga_parameters, p_value){
-  sanger_df %>%
-    # only bases of interest
-    dplyr::filter(grepl(wt, ctrl_max_base)) %>% # To only pull out the bases of interest from the motif
-    dplyr::select(index, ctrl_index, ctrl_max_base, max_base, A_area:T_area, A_perc:T_perc) %>%
-    # If the channel is not found in the potential edits, then it is not applicable or NA, otherwise
-    # If the height of the channel is greater than the critical value for that channel,
-    # return TRUE, otherwise, return FALSE
-    dplyr::mutate(A_pvalue = mapply(FUN = gamlss.dist::dZAGA, x = A_area,
-                             mu = zaga_parameters[1, "mu"],
-                             sigma = zaga_parameters[1, "sigma"],
-                             nu = zaga_parameters[1, "nu"]),
-           C_pvalue = mapply(FUN = gamlss.dist::dZAGA, x = C_area,
-                             mu = zaga_parameters[2, "mu"],
-                             sigma = zaga_parameters[2, "sigma"],
-                             nu = zaga_parameters[2, "nu"]),
-           G_pvalue = mapply(FUN = gamlss.dist::dZAGA, x = G_area,
-                             mu = zaga_parameters[3, "mu"],
-                             sigma = zaga_parameters[3, "sigma"],
-                             nu = zaga_parameters[3, "nu"]),
-           T_pvalue = mapply(FUN = gamlss.dist::dZAGA, x = T_area,
-                             mu = zaga_parameters[4, "mu"],
-                             sigma = zaga_parameters[4, "sigma"],
-                             nu = zaga_parameters[4, "nu"])) %>%
-    dplyr::mutate(A_p_adjust = p.adjust(A_pvalue, "BH"),
-           C_p_adjust = p.adjust(C_pvalue, "BH"),
-           G_p_adjust = p.adjust(G_pvalue, "BH"),
-           T_p_adjust = p.adjust(T_pvalue, "BH")) %>%
-    dplyr::mutate(A_sig = if(!grepl("A", boi)) {FALSE} else {ifelse(A_pvalue <= p_value, TRUE, FALSE)},
-           C_sig = if(!grepl("C", boi)) {FALSE} else {ifelse(C_pvalue <= p_value, TRUE, FALSE)},
-           G_sig = if(!grepl("G", boi)) {FALSE} else {ifelse(G_pvalue <= p_value, TRUE, FALSE)},
-           T_sig = if(!grepl("T", boi)) {FALSE} else {ifelse(T_pvalue <= p_value, TRUE, FALSE)}) %>%
-    dplyr::mutate(A_sig_adjust = if(!grepl("A", boi)) {FALSE} else {ifelse(A_p_adjust<= p_value, TRUE, FALSE)},
-           C_sig_adjust = if(!grepl("C", boi)) {FALSE} else {ifelse(C_p_adjust <= p_value, TRUE, FALSE)},
-           G_sig_adjust = if(!grepl("G", boi)) {FALSE} else {ifelse(G_p_adjust <= p_value, TRUE, FALSE)},
-           T_sig_adjust = if(!grepl("T", boi)) {FALSE} else {ifelse(T_p_adjust <= p_value, TRUE, FALSE)}) %>%
-    ### also selecting for the sample index added 07.09.2019
-    dplyr::select(index, ctrl_index, ctrl_max_base, max_base, A_area:T_area, A_perc:T_perc, A_sig:T_sig, A_sig_adjust:T_sig_adjust, A_pvalue:T_pvalue, A_p_adjust:T_p_adjust) %>%
-    dplyr::mutate(motif = motif, sample_file = sample_file)
+#' @examples
+#' # The ZAGA parameters must be calculated first:
+#' # zaga_params <- make_ZAGA_df(sanger_data, p_adjust = 0.05)
+#' # adjusted_df <- pvalue_adjust(sanger_data, wt = "C",
+#' #   boi = "T", motif = "ACC", sample_file = "sample1.ab1",
+#' #   critical_values = data.frame(), zaga_parameters = zaga_params,
+#' #   p_value = 0.05)
+pvalue_adjust <- function(sanger_df, wt, boi, motif, sample_file, 
+                          critical_values, zaga_parameters, p_value) {
+    # local definitions
+    ctrl_max_base <- ctrl_index <- index <- max_base <- NULL
+    A_area <- C_area <- G_area <- T_area <- NULL
+    A_perc <- T_perc <- NULL
+    A_pvalue <- C_pvalue <- G_pvalue <- T_pvalue <- NULL
+    A_p_adjust <- C_p_adjust <- G_p_adjust <- T_p_adjust <- NULL
+    A_sig <- T_sig <- A_sig_adjust <- T_sig_adjust <- NULL
+    
+    sanger_df |>
+        # only bases of interest
+        dplyr::filter(grepl(wt, ctrl_max_base)) |> # To only pull out the bases of interest from the motif
+        dplyr::select(index, ctrl_index, ctrl_max_base, max_base, A_area:T_area, A_perc:T_perc) |>
+        # If the channel is not found in the potential edits, then it is not applicable or NA, otherwise
+        # If the height of the channel is greater than the critical value for that channel,
+        # return TRUE, otherwise, return FALSE
+        dplyr::mutate(A_pvalue = mapply(FUN = gamlss.dist::dZAGA, x = A_area,
+                                        mu = zaga_parameters[1, "mu"],
+                                        sigma = zaga_parameters[1, "sigma"],
+                                        nu = zaga_parameters[1, "nu"]),
+                      C_pvalue = mapply(FUN = gamlss.dist::dZAGA, x = C_area,
+                                        mu = zaga_parameters[2, "mu"],
+                                        sigma = zaga_parameters[2, "sigma"],
+                                        nu = zaga_parameters[2, "nu"]),
+                      G_pvalue = mapply(FUN = gamlss.dist::dZAGA, x = G_area,
+                                        mu = zaga_parameters[3, "mu"],
+                                        sigma = zaga_parameters[3, "sigma"],
+                                        nu = zaga_parameters[3, "nu"]),
+                      T_pvalue = mapply(FUN = gamlss.dist::dZAGA, x = T_area,
+                                        mu = zaga_parameters[4, "mu"],
+                                        sigma = zaga_parameters[4, "sigma"],
+                                        nu = zaga_parameters[4, "nu"])) |>
+        dplyr::mutate(A_p_adjust = p.adjust(A_pvalue, "BH"),
+                      C_p_adjust = p.adjust(C_pvalue, "BH"),
+                      G_p_adjust = p.adjust(G_pvalue, "BH"),
+                      T_p_adjust = p.adjust(T_pvalue, "BH")) |>
+        dplyr::mutate(A_sig = if(!grepl("A", boi)) {FALSE} else {ifelse(A_pvalue <= p_value, TRUE, FALSE)},
+                      C_sig = if(!grepl("C", boi)) {FALSE} else {ifelse(C_pvalue <= p_value, TRUE, FALSE)},
+                      G_sig = if(!grepl("G", boi)) {FALSE} else {ifelse(G_pvalue <= p_value, TRUE, FALSE)},
+                      T_sig = if(!grepl("T", boi)) {FALSE} else {ifelse(T_pvalue <= p_value, TRUE, FALSE)}) |>
+        dplyr::mutate(A_sig_adjust = if(!grepl("A", boi)) {FALSE} else {ifelse(A_p_adjust<= p_value, TRUE, FALSE)},
+                      C_sig_adjust = if(!grepl("C", boi)) {FALSE} else {ifelse(C_p_adjust <= p_value, TRUE, FALSE)},
+                      G_sig_adjust = if(!grepl("G", boi)) {FALSE} else {ifelse(G_p_adjust <= p_value, TRUE, FALSE)},
+                      T_sig_adjust = if(!grepl("T", boi)) {FALSE} else {ifelse(T_p_adjust <= p_value, TRUE, FALSE)}) |>
+        ### also selecting for the sample index added 07.09.2019
+        dplyr::select(index, ctrl_index, ctrl_max_base, max_base, 
+                      A_area:T_area, A_perc:T_perc, A_sig:T_sig, 
+                      A_sig_adjust:T_sig_adjust, A_pvalue:T_pvalue, 
+                      A_p_adjust:T_p_adjust) |>
+        dplyr::mutate(motif = motif, sample_file = sample_file)
 }
 
-### Reverse complements a DNA character string
-
+#' Reverse Complement a DNA String
+#'
+#' Calculates the reverse complement of a DNA character string.
+#'
+#' @param x A single \code{character} string representing a DNA
+#'   sequence (e.g., "ACGT").
+#' @return A single \code{character} string representing the
+#'   reverse complement of the input sequence.
 #' @importFrom Biostrings reverseComplement DNAString 
-revcom = function(x){as.character(Biostrings::reverseComplement(Biostrings::DNAString(x)))}
+#' @examples
+#' seq <- "ATGCCG"
+#' MultiEditR:::revcom(seq)
+#' # Expected output: "CGGCAT"
+revcom <- function(x) {
+    Biostrings::DNAString(x) |>
+        Biostrings::reverseComplement() |>
+        as.character()
+}
 
 
-
+#' Calculate P-values and Significance for a Specific Base Edit
+#'
+#' Calculates the p-value for the area of a potential edited base
+#' (e.g., T for C-to-T edit) using the Zero-Adjusted Gamma (ZAGA)
+#' noise model, applies Benjamini-Hochberg (BH) correction, and
+#' determines statistical significance. This function focuses only
+#' on the wild-type bases that are susceptible to editing.
+#'
+#' @param motif_part_of_sample A \code{data.frame} containing sanger
+#'   sequencing data, including base call areas (e.g., \code{T_area})
+#'   and an \code{expected_motif} column.
+#' @param zaga_parameters A \code{data.frame} of fitted ZAGA
+#'   distribution parameters (\eqn{\mu}, \eqn{\sigma}, \eqn{\nu}, 
+#'   \code{crit}) for each base, generated by \code{make_ZAGA_df}.
+#' @param wt A \code{character} string specifying the wild-type base
+#'   (e.g., "C") being targeted by the editor.
+#' @param edit A \code{character} string specifying the expected
+#'   edited base (e.g., "T" for a C-to-T editor).
+#' @param p_value A \code{numeric} significance cutoff (e.g., 0.05)
+#'   for the adjusted p-value.
+#' @return The original \code{motif_part_of_sample} data frame
+#'   augmented with three new columns for the rows where
+#'   \code{expected_motif} equals \code{wt}: \code{edit_pvalue} (raw),
+#'   \code{edit_padjust} (BH-adjusted), and \code{edit_sig} (logical
+#'   significance based on \code{edit_padjust < p_value}). Other
+#'   rows will have \code{NA} in these new columns.
 #' @importFrom dplyr filter left_join mutate
 #' @importFrom gamlss.dist dZAGA
-#' @importFrom magrittr `%>%`
-calculate_edit_pvalue = function(motif_part_of_sample, zaga_parameters, wt, edit, p_value){
-  # this reproduces the functionality of "pvalue_adjust" from Mitch's code
-  zaga_params_edit_base_only = zaga_parameters %>%
-    dplyr::filter(base == edit)
-  
-  # get the potential edited rows
-  potential_edits = motif_part_of_sample %>%
-    dplyr::filter(expected_motif == wt)
-  suppressMessages(
-    motif_part_of_sample %>%
-      dplyr::left_join(
-        potential_edits %>%
-          dplyr::mutate(edit_pvalue = mapply(FUN = gamlss.dist::dZAGA, x = .[[paste0(edit, "_area")]],
-                                      mu = zaga_params_edit_base_only[1, "mu"],
-                                      sigma = zaga_params_edit_base_only[1, "sigma"],
-                                      nu = zaga_params_edit_base_only[1, "nu"])) %>% 
-          dplyr::mutate(edit_padjust = p.adjust(edit_pvalue, "BH")) %>% 
-          dplyr::mutate(edit_sig = edit_padjust < p_value)
-      )
-  )
-}
-
-#' @importFrom dplyr as_tibble
-#' @importFrom sangerseqR makeBaseCalls
-#' @importFrom magrittr `%>%`
-make_sample_df = function(sample_sanger){
-  # this creates the basic dataframe we use; it contains the peaks per base
-  # for all positions in the sanger--we add trimming information later
-  # the gist of getting peak data is as follows:
-  # for each position, find the trace location where the peak is.
-  # if a base did not have a peak, then figure out which base had the highest peak
-  # and where. grab the value from that trace location for the NA bases. 
-  # peakPosMatrix tells us where peaks were, if there was one. 
-  
-  peak_locs = sangerseqR::makeBaseCalls(sample_sanger)@peakPosMatrix 
-  colnames(peak_locs) = bases
-  peak_locs = peak_locs %>% 
-    dplyr::as_tibble()
-  peak_locs$max_base = sangerseqR::makeBaseCalls(sample_sanger)@primarySeq %>%
-    as.character() %>% strsplit("") %>% {.[[1]]}
-  
-  ### Once this runs, it's the same as samp_peakAmpDF from before
-  for (i in 1:nrow(peak_locs)){
-    row = unlist(peak_locs[i,1:4])
-    peak_vals = sapply(1:4, FUN = function(x){
-      if (is.na(row[x])){return(NA)}
-      else{
-        return(sample_sanger@traceMatrix[row[x], x])
-      }})
-    peak_locs$A[i] = ifelse(is.na(peak_locs$A[i]), row[peak_locs$max_base[i]], peak_locs$A[i])
-    peak_locs$C[i] = ifelse(is.na(peak_locs$C[i]), row[peak_locs$max_base[i]], peak_locs$C[i])
-    peak_locs$G[i] = ifelse(is.na(peak_locs$G[i]), row[peak_locs$max_base[i]], peak_locs$G[i])
-    peak_locs$T[i] = ifelse(is.na(peak_locs$T[i]), row[peak_locs$max_base[i]], peak_locs$T[i])
+#' @examples
+#' # zaga_params must be calculated first:
+#' # zaga_params <- make_ZAGA_df(sanger_data, p_adjust = 0.05)
+#' # edited_df <- calculate_edit_pvalue(sample_df, zaga_params,
+#' #   wt = "C", edit = "T", p_value = 0.05)
+calculate_edit_pvalue <- function(motif_part_of_sample, zaga_parameters,
+                                  wt, edit, p_value) {
+    # local definitions
+    base <- expected_motif <- edit_pvalue <- edit_padjust <- NULL
     
-  }
-  
-  peak_locs$A_area = sample_sanger@traceMatrix[peak_locs$A, 1]
-  peak_locs$C_area = sample_sanger@traceMatrix[peak_locs$C, 2]
-  peak_locs$G_area = sample_sanger@traceMatrix[peak_locs$G, 3]
-  peak_locs$T_area = sample_sanger@traceMatrix[peak_locs$T, 4]
-  peak_locs$A_perc = peak_locs$A_area/ rowSums(peak_locs[c("A_area","C_area","G_area","T_area")])
-  peak_locs$C_perc = peak_locs$C_area/ rowSums(peak_locs[c("A_area","C_area","G_area","T_area")])
-  peak_locs$G_perc = peak_locs$G_area/ rowSums(peak_locs[c("A_area","C_area","G_area","T_area")])
-  peak_locs$T_perc = peak_locs$T_area/ rowSums(peak_locs[c("A_area","C_area","G_area","T_area")])
-  
-  peak_locs$position = 1:nrow(peak_locs)
-  peak_locs
+    # this reproduces the functionality of "pvalue_adjust" from Mitch's code
+    zaga_params_edit_base_only <- zaga_parameters |>
+        dplyr::filter(base == edit)
+    
+    # get the potential edited rows
+    potential_edits <- motif_part_of_sample |>
+        dplyr::filter(expected_motif == wt)
+    
+    motif_part_of_sample |>
+        dplyr::left_join(
+            potential_edits |>
+                dplyr::mutate(edit_pvalue = mapply(FUN = gamlss.dist::dZAGA, x = .data[[paste0(edit, "_area")]],
+                                                   mu = zaga_params_edit_base_only[1, "mu"],
+                                                   sigma = zaga_params_edit_base_only[1, "sigma"],
+                                                   nu = zaga_params_edit_base_only[1, "nu"])) |> 
+                dplyr::mutate(edit_padjust = p.adjust(edit_pvalue, "BH")) |> 
+                dplyr::mutate(edit_sig = edit_padjust < p_value),
+            by=c("raw_sample_position", "sample_primary_call", 
+                 "raw_control_position", "control_primary_call", 
+                 "A", "C", "G", "T", "max_base", 
+                 "A_area", "C_area", "G_area", "T_area", 
+                 "A_perc", "C_perc", "G_perc", "T_perc", "sample_secondary_call", 
+                 "trimmed", "motif_found", "motif", "expected_motif", 
+                 "ctrl_max_base", "index", "ctrl_index")
+        )
 }
 
-#' @importFrom Biostrings pairwiseAlignment
-is_revcom_ctrl_better = function(init_sample_seq,
-                                 init_ctrl_seq){
-  init_sample_seq = as.character(init_sample_seq)
-  init_ctrl_seq = as.character(init_ctrl_seq)
-  fwd_score = Biostrings::score(Biostrings::pairwiseAlignment(init_sample_seq, init_ctrl_seq))
-  rev_score = Biostrings::score(Biostrings::pairwiseAlignment(init_sample_seq, 
-                                               revcom(init_ctrl_seq)))
-  return(rev_score > fwd_score)
+
+#' Create a Data Frame of Peak Amplitudes and Percentages
+#'
+#' Extracts and processes base-call information from a \code{sangerseq}
+#' object to create a data frame containing peak area, location, and
+#' relative percentage for all four bases (A, C, G, T) at every called
+#' position. The base that was not called at a position is assigned the
+#' area value of the highest-called base at that same trace location.
+#'
+#' @param sample_sanger A \code{sangerseq} object typically created
+#'   from an ABIF file using \code{sangerseqR::sangerseq}.
+#' @return A \code{tibble} (data frame) with one row per base call
+#'   position, containing:
+#'   \itemize{
+#'     \item Peak locations for A, C, G, T.
+#'     \item \code{max_base}: The primary called base.
+#'     \item \code{A_area} to \code{T_area}: The peak height (area).
+#'     \item \code{A_perc} to \code{T_perc}: The relative percentage
+#'       of each base's area compared to the sum of all four areas.
+#'     \item \code{position}: The sequential base call index.
+#'   }
+#' @importFrom dplyr as_tibble
+#' @importFrom tibble tibble
+#' @importFrom sangerseqR makeBaseCalls
+#' @importFrom stringr str_split_1
+#' @examples
+#' # This example requires an ABIF file to be available.
+#' # path_to_abif <- "path/to/your/sanger_file.ab1"
+#' # sanger_data <- sangerseqR::read.abif(path_to_abif)
+#' # sanger_object <- sangerseqR::sangerseq(sanger_data)
+#' # df <- make_sample_df(sanger_object)
+make_sample_df <- function(sample_sanger) {
+    
+    # this creates the basic dataframe we use; it contains the peaks per base
+    # for all positions in the sanger--we add trimming information later
+    # the gist of getting peak data is as follows:
+    # for each position, find the trace location where the peak is.
+    # if a base did not have a peak, then figure out which base had the highest peak
+    # and where. grab the value from that trace location for the NA bases. 
+    # peakPosMatrix tells us where peaks were, if there was one. 
+    
+    peak_locs <- sangerseqR::makeBaseCalls(sample_sanger)@peakPosMatrix 
+    colnames(peak_locs) <- bases
+    peak_locs <- peak_locs |> 
+        dplyr::as_tibble()
+    peak_locs$max_base <- sangerseqR::makeBaseCalls(sample_sanger) |>
+        sangerseqR::primarySeq() |>
+        as.character() |> 
+        stringr::str_split_1("")
+    
+    ### Once this runs, it's the same as samp_peakAmpDF from before
+    for (i in seq_len(nrow(peak_locs))) {
+        row <- unlist(peak_locs[i, bases])
+        peak_vals <- vapply(seq_along(row), FUN = function(x) {
+            if (is.na(row[x])) {
+                return(as.numeric(NA))
+            } else {
+                return(sample_sanger@traceMatrix[row[x], x])
+            }
+        }, FUN.VALUE=numeric(1))
+        peak_locs$A[i] <- ifelse(is.na(peak_locs$A[i]), row[peak_locs$max_base[i]], peak_locs$A[i])
+        peak_locs$C[i] <- ifelse(is.na(peak_locs$C[i]), row[peak_locs$max_base[i]], peak_locs$C[i])
+        peak_locs$G[i] <- ifelse(is.na(peak_locs$G[i]), row[peak_locs$max_base[i]], peak_locs$G[i])
+        peak_locs$T[i] <- ifelse(is.na(peak_locs$T[i]), row[peak_locs$max_base[i]], peak_locs$T[i])
+        
+    }
+    
+    peak_locs$A_area <- sample_sanger@traceMatrix[peak_locs$A, 1]
+    peak_locs$C_area <- sample_sanger@traceMatrix[peak_locs$C, 2]
+    peak_locs$G_area <- sample_sanger@traceMatrix[peak_locs$G, 3]
+    peak_locs$T_area <- sample_sanger@traceMatrix[peak_locs$T, 4]
+    peak_locs$A_perc <- peak_locs$A_area/ rowSums(peak_locs[c("A_area","C_area","G_area","T_area")])
+    peak_locs$C_perc <- peak_locs$C_area/ rowSums(peak_locs[c("A_area","C_area","G_area","T_area")])
+    peak_locs$G_perc <- peak_locs$G_area/ rowSums(peak_locs[c("A_area","C_area","G_area","T_area")])
+    peak_locs$T_perc <- peak_locs$T_area/ rowSums(peak_locs[c("A_area","C_area","G_area","T_area")])
+    
+    peak_locs$position <- seq_len(nrow(peak_locs))
+    peak_locs
+}
+
+#' Determine if Reverse Complement of Control Sequence is a Better Alignment
+#'
+#' Compares the alignment score of the sample sequence against the
+#' control sequence with the alignment score of the sample sequence
+#' against the **reverse complement** of the control sequence.
+#'
+#' @param init_sample_seq A \code{character} string or \code{DNAString}
+#'   object representing the sample sequence.
+#' @param init_ctrl_seq A \code{character} string or \code{DNAString}
+#'   object representing the control sequence.
+#' @return A \code{logical} value: \code{TRUE} if the alignment score
+#'   with the reverse complement of the control sequence is strictly
+#'   greater than the score with the forward control sequence, and
+#'   \code{FALSE} otherwise.
+#' @importFrom pwalign pairwiseAlignment score
+#' @examples
+#' # Assume 'revcom' function is available
+#' # Best match is forward:
+#' # is_revcom_ctrl_better("ATGC", "ATGC")
+#' # # Expected: FALSE
+#'
+#' # Best match is reverse complement:
+#' # is_revcom_ctrl_better("ATGC", "GCAT")
+#' # # Expected: TRUE
+is_revcom_ctrl_better <- function(init_sample_seq, init_ctrl_seq) {
+    init_sample_seq <- as.character(init_sample_seq)
+    init_ctrl_seq <- as.character(init_ctrl_seq)
+    
+    fwd_score <- pwalign::pairwiseAlignment(init_sample_seq, init_ctrl_seq)|>
+        pwalign::score()
+    rev_score <- pwalign::pairwiseAlignment(init_sample_seq, 
+                                            revcom(init_ctrl_seq)) |>
+        pwalign::score()
+    
+    return(rev_score > fwd_score)
 }
 
 #' @importFrom sangerseqR readsangerseq
-is_file_ab1 = function(filepath){
-  # checks if the file is .ab1, looks like a fasta, or neither
-  if (!file.exists(filepath)){
-    return(FALSE)
-  }
-  result = tryCatch({
-    sangerseqR::readsangerseq(filepath)
-    return(TRUE)
-  },error =
-    function(e){
-      FALSE
+is_file_ab1 <- function(filepath){
+    # checks if the file is .ab1, looks like a fasta, or neither
+    if (!file.exists(filepath)){
+        return(FALSE)
+    }
+    result <- tryCatch({
+        sangerseqR::readsangerseq(filepath)
+        return(TRUE)
+    }, error = function(e) {
+        FALSE
     })
-  return(result)
+    
+    return(result)
 }
 
-###
-# Data retrieval and Plotting Functions
-###
+## Data retrieval ----
 
-
-#' Get complete fit results
+#' Get Complete Base Editor Fit Results
 #'
-#' @param fit the result of detect_edits
-#' @return A dataframe with the following columns:
-#' raw_sample_position - position in the sample sanger
-#' passed_trimming - whether the sample sanger passed trimming (TRUE) or was low quality (FALSE)
-#' motif_number - The numbered motif found in the control. -1 means not a match, 1 is the first match, 2 the second, etc.
-#' edit_sig - whether the WT was significantly changed
-#' control_base - The control sequence. Also serves as the motif sequence when motif_number > 0
-#' sample_primary_call - The highest defined peak in the sample
-#' sample_secondary_call - The second highest defined peak in the sample
-#' A-T_area - The maximum sample height of the base peak
-#' A-T_perc - The percent of this base peak's height over all bases
-#' edit_pvalue/adjust 
-#' motif_seq - the motif_seq as used. Meaning, if motif_fwd == FALSE, the rev-com of the motif you supplied
-#' sample_file
-#' control_file
-#' @export
+#' Consolidates the raw sequencing data and the edit detection
+#' results into a single comprehensive data frame for final output.
+#'
+#' @param fit A \code{list} object, the result of a base editor
+#'   analysis function like \code{detect_edits}, containing both
+#'   raw and intermediate processed data.
+#' @return A \code{data.frame} containing the following columns:
+#'   \itemize{
+#'     \item \code{raw_sample_position}: Position in the sample sanger
+#'       sequence.
+#'     \item \code{passed_trimming}: \code{TRUE} if the sample sanger
+#'       sequence passed quality trimming, \code{FALSE} otherwise.
+#'     \item \code{motif_number}: The numbered motif match in the
+#'       control sequence. \code{-1} for no match, \code{1} for the
+#'       first match, etc.
+#'     \item \code{edit_sig}: \code{TRUE} if the wild-type base was
+#'       significantly changed based on the adjusted p-value.
+#'     \item \code{control_base}: The primary base call from the control
+#'       sequence. Also serves as the expected motif base when
+#'       \code{motif_number > 0}.
+#'     \item \code{expected_change}: The expected nucleotide change
+#'       (e.g., "C->T") at that position.
+#'     \item \code{sample_primary_call}: The highest defined peak in the
+#'       sample sequence.
+#'     \item \code{sample_secondary_call}: The second highest defined
+#'       peak in the sample sequence.
+#'     \item \code{A_area} to \code{T_area}: The maximum sample height
+#'       of each base peak.
+#'     \item \code{A_perc} to \code{T_perc}: The percent of each base
+#'       peak's height over the sum of all base heights.
+#'     \item \code{edit_pvalue}: The raw p-value for the base edit.
+#'     \item \code{edit_padjust}: The Benjamini-Hochberg adjusted
+#'       p-value for the base edit.
+#'     \item \code{motif_seq}: The motif sequence used for alignment.
+#'       If the reverse complement was used, this is the rev-com sequence.
+#'     \item \code{sample_file}: The file name of the sample sequence.
+#'     \item \code{control_file}: The file name of the control sequence.
+#'   }
 #' @importFrom dplyr mutate left_join
-#' @import ggplot2
-#' @importFrom magrittr `%>%`
-results = function(fit){
-  suppressMessages(
-    fit$intermediate_data$raw_sample_df %>%
-    dplyr::mutate(motif_seq = fit$sample_data$motif[1],
-           sample_file = basename(fit$sample_data$sample_file[1]),
-           control_file = basename(fit$intermediate_data$sample_alt$ctrl_file[1]),
-           ) %>%
-    dplyr::left_join(fit$sample_data %>%
-                       dplyr::mutate(raw_sample_position = index) %>%
-                       dplyr::rename(position_in_motif = target_base) %>%
-                       dplyr::mutate(expected_change = fit$expected_change) %>%
-                dplyr::select(raw_sample_position,position_in_motif,expected_change,
-                              edit_pvalue, edit_padjust, edit_sig)
-                ) %>%
-    dplyr::mutate(passed_trimming = !is_trimmed) %>%
-    dplyr::rename(control_base = control_primary_call) %>%
-    dplyr::rename(motif_number = motif) %>%
-    dplyr::select(raw_sample_position, passed_trimming, motif_number, edit_sig, control_base, 
-                  expected_change, sample_primary_call, sample_secondary_call, A_area, C_area,
-                  G_area, T_area, A_perc, C_perc, G_perc, T_perc, edit_pvalue, 
-                  edit_padjust, motif_seq, sample_file, control_file)
-  )
+#' @export
+#' @examples
+#' # This requires a full analysis result object, 'fit', from a
+#' # function like detect_edits().
+#' # final_results <- results(fit_object)
+results <- function(fit) {
+    # local definitions
+    index <- target_base <- control_base <- NULL
+    raw_sample_position <- position_in_motif <- expected_change <- NULL
+    edit_pvalue <- edit_padjust <- edit_sig <- NULL
+    control_primary_call <- sample_primary_call <- sample_secondary_call <- NULL
+    motif <- is_trimmed <- passed_trimming <- motif_number <- NULL
+    A_area <- C_area <- G_area <- T_area <- NULL
+    A_perc <- C_perc <- G_perc <- T_perc <- NULL
+    motif_seq <- sample_file <- control_file <- NULL
+    
+    
+    fit$intermediate_data$raw_sample_df |>
+        dplyr::mutate(motif_seq = fit$sample_data$motif[1],
+                      sample_file = basename(fit$sample_data$sample_file[1]),
+                      control_file = basename(fit$intermediate_data$sample_alt$ctrl_file[1])) |>
+        dplyr::left_join(fit$sample_data |>
+                             dplyr::mutate(raw_sample_position = index) |>
+                             dplyr::rename(position_in_motif = target_base) |>
+                             dplyr::mutate(expected_change = fit$expected_change) |>
+                             dplyr::select(raw_sample_position,position_in_motif,expected_change,
+                                           edit_pvalue, edit_padjust, edit_sig),
+                         by="raw_sample_position") |>
+        dplyr::mutate(passed_trimming = !is_trimmed) |>
+        dplyr::rename(control_base = control_primary_call) |>
+        dplyr::rename(motif_number = motif) |>
+        dplyr::select(raw_sample_position, passed_trimming, motif_number, edit_sig, control_base, 
+                      expected_change, sample_primary_call, sample_secondary_call, A_area, C_area,
+                      G_area, T_area, A_perc, C_perc, G_perc, T_perc, edit_pvalue, 
+                      edit_padjust, motif_seq, sample_file, control_file)
 }
+
+#' Summarize Editing Statistics for Targeted Bases
+#'
+#' Calculates descriptive statistics (Mean, Max, Min, Standard
+#' Deviation, and Count) for the percent height (\code{perc}) of the
+#' edited base, grouped by the edited base (\code{base}) and
+#' whether the editing was statistically significant (\code{sig}).
+#'
+#' @param editing_data A \code{data.frame} containing the intermediate
+#'   editing analysis results, typically the
+#'   \code{fit$intermediate_data$output_sample_alt} object, and must
+#'   include the columns \code{base}, \code{sig}, and \code{perc}.
+#' @return A summarized \code{data.frame} with the following columns:
+#'   \itemize{
+#'     \item \code{Base}: The edited base (e.g., 'T' for C->T).
+#'     \item \code{Significance}: Logical (\code{TRUE}/\code{FALSE})
+#'       indicating statistical significance of the edit.
+#'     \item \code{Mean}: Mean percent height of the edited base.
+#'     \item \code{Max}: Maximum percent height of the edited base.
+#'     \item \code{Min}: Minimum percent height of the edited base.
+#'     \item \code{SD}: Standard deviation of the percent height.
+#'     \item \code{N}: Number of observations (positions).
+#'   }
+#' @importFrom stats sd 
+#' @importFrom dplyr group_by summarize rename
+#' @export
+#' @examples
+#' # This requires the intermediate data from a fit object.
+#' # stats_df <- tableEditingData(fit_object$intermediate_data$output_sample_alt)
+tableEditingData <- function(editing_data) {
+    # local definitions
+    sig <- perc <- base <- NULL
+    
+    editing_data |>
+        dplyr::group_by(base, sig) |>
+        dplyr::summarize(Mean = mean(perc), Max = max(perc), Min = min(perc),
+                         SD = sd(perc), N = length(perc)) |>
+        dplyr::rename(Base = base, Significance = sig)
+}
+
+## Plotting Functions -----
 
 #' Plot the primary call percentage and trim / motif detection points
 #'
@@ -359,322 +598,439 @@ results = function(fit){
 #' @export
 #' @importFrom dplyr mutate
 #' @import ggplot2
-#' @importFrom magrittr `%>%`
-plot_raw_sample = function(fit){
-  tmp = fit$intermediate_data$raw_sample_df 
-  tmp %>%
-    dplyr::mutate(max_base_percent = max_base_height / Tot.Area) %>%
-    dplyr::mutate(trimmed = ifelse(is_trimmed, 100, 0)) %>%
-    dplyr::mutate(motif = ifelse(motif > -1, 100, 0)) %>%
-    ggplot(aes(x = index, y= 100*max_base_percent))+
-    geom_bar(aes(y = trimmed), fill = "grey", stat = "identity", width = 2)+
-    geom_bar(aes(y = motif),fill = "#53BCC2", stat = "identity", width = 2)+
-    geom_line()+
-    xlab("Position in sample Sanger sequence") +
-    ylab("Percent signal of basecall")+
-    ylim(0,100)+
-    theme_classic(base_size = 18)+
-    annotate("rect", xmin =  max(tmp$index) *  0.05, xmax = max(tmp$index) *0.1,
-             ymin = 20, ymax = 30, fill = "grey")+
-    annotate("text", x = max(tmp$index) *0.12, y = 25, label = "low Phred trimmed bases", hjust = 0)+
-    annotate("rect", xmin =  max(tmp$index) *  0.05, xmax = max(tmp$index) *0.1,
-             ymin = 8, ymax = 18, fill = "#53BCC2")+
-    annotate("text", x = max(tmp$index) *0.12, y = 13, label = "motif bases", hjust = 0)
+
+plot_raw_sample <- function(fit) {
+    # local definitions
+    max_base_height <- max_base_percent <- Tot.Area <- NULL
+    motif <- index <- trimmed <- is_trimmed <- NULL
+    
+    tmp <- fit$intermediate_data$raw_sample_df 
+    tmp |>
+        dplyr::mutate(max_base_percent = max_base_height / Tot.Area) |>
+        dplyr::mutate(trimmed = ifelse(is_trimmed, 100, 0)) |>
+        dplyr::mutate(motif = ifelse(motif > -1, 100, 0)) |>
+        ggplot(aes(x = index, y= 100*max_base_percent))+
+        geom_bar(aes(y = trimmed), fill = "grey", stat = "identity", width = 2) +
+        geom_bar(aes(y = motif),fill = "#53BCC2", stat = "identity", width = 2) +
+        geom_line()+
+        ylim(0,100) +
+        labs(x="Position in sample Sanger sequence",
+             y="Percent signal of basecall") +
+        annotate("rect", xmin =  max(tmp$index) *  0.05, xmax = max(tmp$index) *0.1,
+                 ymin = 20, ymax = 30, fill = "grey")+
+        annotate("text", x = max(tmp$index) *0.12, y = 25, 
+                 label = "low Phred trimmed bases", hjust = 0)+
+        annotate("rect", xmin =  max(tmp$index) *  0.05, xmax = max(tmp$index) *0.1,
+                 ymin = 8, ymax = 18, fill = "#53BCC2")+
+        annotate("text", x = max(tmp$index) *0.12, y = 13, 
+                 label = "motif bases", hjust = 0) +
+        theme_classic(base_size = 18)
 }
 
 
 
-# Function for plotting trimmed sample data
-
-#' Plot the primary call percentage just in the non-trimmed data
+#' Plot Trimmed Sample Primary Call Percentage and Motif Location
 #'
-#' @param fit the result of detect_edits
-#' @return A ggplot object
+#' Generates a \code{ggplot} object to visualize the **percent noise**
+#' (100% minus the primary base call percentage) for the Sanger
+#' sequence data that passed the trimming quality filters. It also
+#' highlights the locations of the aligned editing motif(s).
+#'
+#' @param fit The \code{list} object resulting from a base editor
+#'   analysis function (e.g., \code{detect_edits}), which contains
+#'   the intermediate processed data.
+#' @return A \code{ggplot} object showing:
+#'   \itemize{
+#'     \item A line plot of the percent noise (y-axis) across the
+#'       position in the sequence (x-axis).
+#'     \item Vertical bars (\code{geom_bar}) at motif positions,
+#'       used for highlighting, where the bar height is 100.
+#'   }
+#' @export
+#' @examples
+#' # This requires a full analysis result object, 'fit', from a
+#' # function like detect_edits().
+#' # plot_trimmed_sample(fit_object)
+plot_trimmed_sample <-  function(fit){
+    # local definitions
+    max_base_height <- max_base_percent <- Tot.Area <- NULL
+    motif <- index <- trimmed <- is_trimmed <- NULL
+    
+    tmp <- fit$intermediate_data$raw_sample_df 
+    
+    tmp |>
+        dplyr::mutate(max_base_percent = max_base_height / Tot.Area) |>
+        dplyr::filter(!is_trimmed) |>
+        dplyr::mutate(motif = ifelse(motif > -1, 100, 0)) |>
+        ggplot(aes(x = index, y= 100 - 100*max_base_percent))+
+        geom_bar(aes(y = motif),fill = "#53BCC2", stat = "identity", width = 2)+
+        geom_line() +
+        ylim(0,100) +
+        labs(x="Position in sample Sanger sequence", 
+             y="Percent noise in WT basecall") +
+        annotate("rect", xmin =  max(tmp$index) *  0.05, xmax = max(tmp$index) *0.1,
+                 ymin = 8, ymax = 18, fill = "#53BCC2")+
+        annotate("text", x = max(tmp$index) *0.12, y = 13, 
+                 label = "motif bases", hjust = 0) +
+        theme_classic(base_size = 18)
+}
+
+#' Plot Editing Statistics in Tested Wild-Type Bases
+#'
+#' Generates a \code{ggplot} bar plot visualizing the mean percentage
+#' height of the edited base (e.g., T for C-to-T) at all targeted
+#' wild-type positions. Points for individual base positions are
+#' overlaid, and the data is faceted by the edited base.
+#'
+#' @param fit The \code{list} object resulting from a base editor
+#'   analysis function (e.g., \code{detect_edits}), which contains
+#'   the intermediate processed data in the \code{output_sample_alt}
+#'   slot.
+#' @return A \code{ggplot} object: a bar plot where the bars show
+#'   the **mean percent height** of the edited base, grouped by
+#'   whether the edit was statistically significant (\code{sig}).
+#'   Individual data points are shown, and the plot is faceted by
+#'   the specific edited base (\code{base}).
 #' @importFrom dplyr mutate filter
 #' @import ggplot2
-#' @importFrom magrittr `%>%`
 #' @export
-plot_trimmed_sample = function(fit){
-  tmp = fit$intermediate_data$raw_sample_df 
-  tmp  %>%
-    dplyr::mutate(max_base_percent = max_base_height / Tot.Area) %>%
-    dplyr::filter(!is_trimmed) %>%
-    dplyr::mutate(motif = ifelse(motif > -1, 100, 0)) %>%
-    ggplot(aes(x = index, y= 100 - 100*max_base_percent))+
-    geom_bar(aes(y = motif),fill = "#53BCC2", stat = "identity", width = 2)+
-    geom_line()+
-    ylim(0,100)+
-    xlab("Position in sample Sanger sequence") +
-    ylab("Percent noise in WT basecall")+
-    theme_classic(base_size = 18)+
-    annotate("rect", xmin =  max(tmp$index) *  0.05, xmax = max(tmp$index) *0.1,
-             ymin = 8, ymax = 18, fill = "#53BCC2")+
-    annotate("text", x = max(tmp$index) *0.12, y = 13, label = "motif bases", hjust = 0)
+#' @examples
+#' # This requires a full analysis result object, 'fit', from a
+#' # function like detect_edits().
+#' # plot_editing_barplot(fit_object)
+plot_editing_barplot <- function(fit) {
+    # local definitions
+    sig <- perc <- base <- mean_height <- NULL
+    
+    editing_data <- fit$intermediate_data$output_sample_alt
+    
+    editing_data |>
+        ggplot(aes(x = sig, y = perc, color = sig, fill = sig)) +
+        scale_y_continuous(limits = c(0,100), breaks = seq(0,100,10)) +
+        geom_bar(data = editing_data |>
+                     group_by(sig, base) |>
+                     summarize(mean_height = mean(perc)),
+                 aes(y = mean_height),
+                 stat = "identity", alpha = 0.6, color = "black") +
+        geom_point(size = 2, alpha = 1) +
+        ylab("Percent height of Sanger trace") +
+        xlab("") +
+        guides(fill = NULL) +
+        theme_classic(base_size = 18) +
+        theme(aspect.ratio = 4/1,
+              axis.text.x = element_blank(),
+              axis.ticks.x = element_blank()) +#sum(grepl(edit, bases))) +
+        facet_wrap(.~base, nrow = 1, scales = "free_x")
 }
 
-#' Plot statistics in the tested wt bases 
+#' Plot Sanger Chromatogram Trace and Tiling at Motif Locations
 #'
-#' @param fit the result of detect_edits
-#' @return A ggplot object
-#' @export
-#' @importFrom dplyr mutate filter
-#' @import ggplot2
-#' @importFrom magrittr `%>%`
-plot_editing_barplot = function(fit){
-  editing_data = fit$intermediate_data$output_sample_alt
-  editing_data %>%
-    ggplot(aes(x = sig, y = perc, color = sig, fill = sig)) +
-    scale_y_continuous(limits = c(0,100), breaks = seq(0,100,10)) +
-    geom_bar(data = . %>%
-               group_by(sig, base) %>%
-               summarize(mean_height = mean(perc)),
-             aes(y = mean_height),
-             stat = "identity",alpha = 0.6, color = "black") +
-    geom_point(size = 2, alpha = 1) +
-    ylab("Percent height of Sanger trace") +
-    xlab("") +
-    guides(fill = NULL) +
-    theme_classic(base_size = 18) +
-    theme(aspect.ratio = 4/1,
-          axis.text.x = element_blank(),
-          axis.ticks.x = element_blank()) +#sum(grepl(edit, bases))) +
-    facet_wrap(.~base, nrow = 1, scales = "free_x")
-}
-
-
-#' @importFrom magrittr `%>%`
-#' @importFrom dplyr group_by summarize rename
-tableEditingData = function(editing_data) {
-  editing_data %>%
-    dplyr::group_by(base, sig) %>%
-    dplyr::summarize(Mean = mean(perc), Max = max(perc), Min = min(perc), SD = sd(perc), N = length(perc)) %>%
-    dplyr::rename(Base = base, Significance = sig)
-}
-
-#' @importFrom dplyr as_tibble distinct case_when summarize pull rename mutate arrange filter inner_join ungroup
+#' Generates a custom \code{ggplot} visualization that combines the
+#' raw Sanger sequencing trace data with a base call "tiling" plot
+#' specifically focused on the aligned motif location(s). The tiling
+#' plot shows the percentage of each base's peak height at every
+#' position within the motif.
+#'
+#' @param sanger A \code{sangerseq} object (the sample sequence)
+#'   containing the raw trace data.
+#' @param raw_sample_df A \code{data.frame} containing the processed
+#'   sample base call and motif alignment information, typically the
+#'   \code{fit$intermediate_data$raw_sample_df} output.
+#' @param motif A \code{character} string of the editing motif used.
+#' @param sanger_fwd A \code{logical} indicating if the sanger sequence
+#'   was processed in the forward direction (\code{TRUE}) or reverse
+#'   complement (\code{FALSE}). Default is \code{TRUE}.
+#' @param motif_fwd A \code{logical} indicating if the motif was used
+#'   in the forward direction (\code{TRUE}) or reverse complement
+#'   (\code{FALSE}). Default is \code{TRUE}.
+#' @return A \code{ggplot} object that includes:
+#'   \itemize{
+#'     \item The raw chromatogram trace for the region corresponding to
+#'       the aligned motif(s), with each base trace colored.
+#'     \item A tiled heatmap below the trace, where each cell represents
+#'       a base position within the motif. The cell color and text label
+#'       show the percentage of the base's area (peak height) relative
+#'       to the total area at that position.
+#'   }
+#' @importFrom dplyr as_tibble distinct case_when summarize pull rename mutate arrange filter inner_join ungroup row_number bind_rows
 #' @importFrom tidyr gather pivot_longer
-#' @importFrom magrittr `%>%`
-#' @import ggplot2
+#' @importFrom grDevices colorRampPalette
 #' @importFrom sangerseqR peakPosMatrix makeBaseCalls traceMatrix
-plot_chromatogram_at_motif = function(sanger, raw_sample_df, motif, 
-                                      sanger_fwd = TRUE,
-                                      motif_fwd = TRUE){
-  motif_locations = raw_sample_df$raw_sample_position[raw_sample_df$motif != -1]
-  
-  # first collect the data which will make up the tiling
-  sanger_peaks = raw_sample_df %>%
-    dplyr::rename(A = A_area) %>%
-    dplyr::rename(C = C_area) %>%
-    dplyr::rename(G = G_area) %>%
-    dplyr::rename(T = T_area) %>%
-    dplyr::rename(base_called = sample_primary_call) %>%
-    dplyr::rename(peak = max_base_height) %>%
-    dplyr::rename(rowid = raw_sample_position) %>%
-    dplyr::select(rowid, A, C, G, T, base_called, peak) %>%
-    dplyr::filter(base_called %in% c("A","C","G","T")) %>%
-    dplyr::distinct()
-  
-  
-  # we use those locations to rearrange peak_mat
-  sanger_peaks_at_motif = sanger_peaks %>%
-    dplyr::filter(rowid %in% motif_locations) %>%
-    dplyr::mutate(motif_pos = if(sanger_fwd){
-      1:nrow(.) - 0.5
-    }
-    else{
-      rev(1:nrow(.)) - 0.5
-    }) %>%
-    dplyr::select(-rowid, - peak) %>%
-    tidyr::pivot_longer(c(A,C,`T`,G),
-                 names_to = "base", values_to = "peak") %>%
-    dplyr::group_by(motif_pos) %>%
-    dplyr::mutate(peak_percent = as.character(round(100*peak/sum(peak)))) %>%
-    dplyr::ungroup() %>%
-    dplyr::mutate(base_pos = case_when(base == "A" ~ -1/8, base == "C" ~ -2/8,
-                                base == "G" ~ -3/8, base == "T" ~ -4/8)) 
-  
-  
-  # now figure out the trace_ends for each motif
-  motif_ends = raw_sample_df %>%
-    dplyr::filter(motif != -1) %>%
-    dplyr::group_by(motif) %>%
-    dplyr::summarize(motif_start = min(raw_sample_position),
-              motif_end = max(raw_sample_position))
-  
-  # peakPosMatrix tells us where the peaks for the motif start and end
-  trace_to_position_df = sangerseqR::peakPosMatrix(sangerseqR::makeBaseCalls(sanger)) %>% 
-    as.data.frame() %>%
-    dplyr::mutate(base_position = if(sanger_fwd){
-      1:nrow(.)
-    }else{
-      1 + rev(1:nrow(.))
-    }) %>%
-    tidyr::pivot_longer(-base_position, names_to = "base", values_to = "rowid") %>%
-    dplyr::filter(!is.na(rowid)) %>%
-    dplyr::group_by(base_position) %>%
-    dplyr::slice_head(n =1)
-  
-  # this holds starts and ends in trace and base positions per motif
-  motif_ends$trace_start = trace_to_position_df %>%
-    dplyr::filter(base_position %in% motif_ends$motif_start) %>%
-    dplyr::pull(rowid)
-  motif_ends$trace_end = trace_to_position_df %>%
-    dplyr::filter(base_position %in% motif_ends$motif_end) %>%
-    dplyr::pull(rowid)
-  
-  
-  ## get the trace df
-  full_trace_df = sangerseqR::traceMatrix(sangerseqR::makeBaseCalls(sanger)) %>%
-    as.data.frame() %>%
-    dplyr::rename(A = V1, C = V2, G = V3, `T` = V4) %>%
-    dplyr::mutate(rowid = if(sanger_fwd){
-      1:nrow(.)
-    }else{
-      rev(1:nrow(.))
-    }) %>%
-    tidyr::pivot_longer(-rowid, names_to = "base", values_to = "peak") %>%
-    dplyr::mutate(base = if(sanger_fwd){
-      base
-    }else{
-      dplyr::case_when(base == "A" ~ "T", base == "T" ~ "A", base == "C" ~ "G", base == "G" ~ "C")
-    }) %>%
-    dplyr::mutate(base_fill_code = case_when(base == "A" ~ "1000", base == "C" ~ "2000",
-                                             base == "G" ~ "3000", base == "T" ~ "4000")) 
-  
-  motif_trace_df = data.frame()
-  for (motif_id in unique(motif_ends$motif)){
-    motif_trace_df = rbind(motif_trace_df,
-                           full_trace_df %>%
-                             dplyr::filter(rowid >= motif_ends$trace_start[motif_ends$motif == motif_id] -5,
-                                    rowid <= motif_ends$trace_end[motif_ends$motif == motif_id] +5) %>%
-                             dplyr::mutate(rowpos = nchar(motif) * (motif_id -1 ) + nchar(motif) * (rowid - min(rowid)) / (max(rowid) - min(rowid)))
-                           )
-  }
-  motif_trace_df = motif_trace_df %>%
-  dplyr::mutate(rowpos = if(sanger_fwd){
-      rowpos
-    }else{
-      rev(rowpos)
-    }) %>%
-    dplyr::group_by(base) %>%
-    dplyr::mutate(trace = peak / max(peak)+1/16) %>%
-    dplyr::ungroup()
-
-  
-  # establish the colors in the fill_key to use a character set for the 
-  # tile AND trace colors
-  fill_colors = c(rep("#FFFFFF",7),
-                  colorRampPalette(colors = c("white", "#e41a1c"))(13),
-                  colorRampPalette(colors = c("#e41a1c", "#e41a1c"))(30),
-                  colorRampPalette(colors = c("#e41a1c", "#377eb8"))(51),
-                  "#32CD32", "#4169E1", "#121212", "#FC4338")
-  names(fill_colors) = c(0:6, 7:19, 20:49, 50:100, 1000, 2000, 3000, 4000)
-  
-  #### We plot the raw trace which has been subsetted to just the motif locations
-  
-  # we modify the labels depending on how many motifs were found
-  motif_order = 1:nchar(motif)
-  motif_current = motif
-  if (!motif_fwd){
-    motif_current = revcom(motif)
-    motif_order = rev(motif_order)
-  }
-  motif_label = strsplit(
-    paste0(rep(motif_current, nrow(motif_ends)), collapse = ""), "")[[1]]
-  motif_pos_label = rep(motif_order, nrow(motif_ends))
-  motif_x = 1:length(motif_pos_label)-0.5
-  motif_ends$motif_colors = c("lightgray","white")[1 + motif_ends$motif %% 2]
-  
-  # put the pieces together
-  motif_trace_df %>%
-    ggplot(aes(x = rowpos, ymin = 1/16, ymax = trace, 
-               color =base, fill = base_fill_code))+
-    geom_ribbon(alpha = 0.1)+
-    scale_color_manual(values = c("A" = "#4daf4a", "C" = "#377eb8", "G" = "black", "T" = "#e41a1c"))+
-    geom_tile(data = sanger_peaks_at_motif,
-              inherit.aes = FALSE,
-              aes(x = motif_pos, y = base_pos,  fill = peak_percent),
-              color = "black")+
-    geom_text(data = sanger_peaks_at_motif,
-              inherit.aes = FALSE, color = "black",
-              aes(x = motif_pos, y = base_pos, label = peak_percent))+
-    scale_fill_manual(values = fill_colors)+
-    theme_void()+
-    theme(legend.position = "none",
-          aspect.ratio = 1/1.5)+
-    annotate("text", x = -0.5, y = -c(1:4)/8, label = c("A","C","G","T"))+
-    annotate("text", x = motif_x, y = -0, 
-             label = motif_label)+
-    annotate("rect", xmin = (motif_ends$motif-1)*nchar(motif), 
-             xmax = (motif_ends$motif)*nchar(motif), 
-             ymin = rep(-0.575, nrow(motif_ends)), 
-             ymax = rep(-0.675, nrow(motif_ends)),
-             fill = motif_ends$motif_colors)+
-    annotate("text", x = motif_x, y = -5/8, 
-             label = motif_pos_label
-         )+
-    annotate("text", x = 1, y = 1, 
-             label = paste0("motif given: ",motif, "\nmotif revcom below?  ", !motif_fwd), 
-             hjust = 0, vjust = 0, size = 2)
-}
-
-#' Plot the chromatogram + percentage tiles for all detected motifs in the sample
-#' 
-#'
-#' @param fit the result of detect_edits
-#' @return A ggplot object
-#' @export
-plot_sample_chromatogram = function(fit){
-  motif = fit$motif
-  motif_fwd = fit$motif_fwd
-  plot_chromatogram_at_motif(fit$sample_sanger, raw_sample_df = fit$intermediate_data$raw_sample_df, 
-                             motif = motif, motif_fwd = motif_fwd)
-}
-
-#' Plot the chromatogram + percentage tiles for all detected motifs in the control
-#' 
-#'
-#' @param fit the result of detect_edits
-#' @return A ggplot object
-#' @export
 #' @import ggplot2
-#' @importFrom magrittr `%>%`
+#' @examples
+#' # This requires a sangerseq object and the raw_sample_df
+#' # from a detect_edits fit.
+#' # plot_chromatogram_at_motif(sanger_obj, fit_obj$intermediate_data$raw_sample_df,
+#' #   motif = "ACGT")
+plot_chromatogram_at_motif <- function(sanger, raw_sample_df, motif, 
+                                       sanger_fwd = TRUE,
+                                       motif_fwd = TRUE) {
+    # local definitions
+    A <- C <- G <- NULL
+    A_area <- C_area <- G_area <- T_area <- NULL
+    sample_primary_call <- raw_sample_position <- NULL
+    rowid <- peak <- motif_pos <- rowpos <- peak_percent <- NULL
+    V1 <- V2 <- V3 <- V4 <- NULL
+    base <- base_called <- base_pos <- NULL
+    base_fill_code <- base_position <- max_base_height <- NULL
+    
+    
+    motif_locations <- raw_sample_df$raw_sample_position[raw_sample_df$motif != -1]
+    
+    # first collect the data which will make up the tiling
+    sanger_peaks <- raw_sample_df |>
+        dplyr::rename(`A` = A_area) |>
+        dplyr::rename(`C` = C_area) |>
+        dplyr::rename(`G` = G_area) |>
+        dplyr::rename(`T` = T_area) |>
+        dplyr::rename(base_called = sample_primary_call) |>
+        dplyr::rename(peak = max_base_height) |>
+        dplyr::rename(rowid = raw_sample_position) |>
+        dplyr::select(rowid, `A`, `C`, `G`, `T`, base_called, peak) |>
+        dplyr::filter(base_called %in% c("A","C","G","T")) |>
+        dplyr::distinct()
+    
+    # we use those locations to rearrange peak_mat
+    sanger_peaks_at_motif <- sanger_peaks |>
+        dplyr::filter(rowid %in% motif_locations) |>
+        dplyr::mutate(motif_pos = if(sanger_fwd) {
+            dplyr::row_number() - 0.5
+        } else {
+            rev(dplyr::row_number()) - 0.5
+        }) |>
+        dplyr::select(-rowid, - peak) |>
+        tidyr::pivot_longer(c(`A`,`C`,`T`,`G`),
+                            names_to = "base", values_to = "peak") |>
+        dplyr::group_by(motif_pos) |>
+        dplyr::mutate(peak_percent = as.character(round(100*peak/sum(peak)))) |>
+        dplyr::ungroup() |>
+        dplyr::mutate(base_pos = case_when(base == "A" ~ -1/8, base == "C" ~ -2/8,
+                                           base == "G" ~ -3/8, base == "T" ~ -4/8)) 
+    
+    
+    # now figure out the trace_ends for each motif
+    motif_ends <- raw_sample_df |>
+        dplyr::filter(motif != -1) |>
+        dplyr::group_by(motif) |>
+        dplyr::summarize(motif_start = min(raw_sample_position),
+                         motif_end = max(raw_sample_position))
+    
+    # peakPosMatrix tells us where the peaks for the motif start and end
+    trace_to_position_df <- sangerseqR::peakPosMatrix(sangerseqR::makeBaseCalls(sanger)) |> 
+        as.data.frame() |>
+        dplyr::mutate(base_position = if(sanger_fwd){
+            dplyr::row_number() 
+        }else{
+            1 + rev(dplyr::row_number())
+        }) |>
+        tidyr::pivot_longer(-base_position, names_to = "base", values_to = "rowid") |>
+        dplyr::filter(!is.na(rowid)) |>
+        dplyr::group_by(base_position) |>
+        dplyr::slice_head(n =1)
+    
+    # this holds starts and ends in trace and base positions per motif
+    motif_ends$trace_start <- trace_to_position_df |>
+        dplyr::filter(base_position %in% motif_ends$motif_start) |>
+        dplyr::pull(rowid)
+    motif_ends$trace_end <- trace_to_position_df |>
+        dplyr::filter(base_position %in% motif_ends$motif_end) |>
+        dplyr::pull(rowid)
+    
+    ## get the trace df
+    full_trace_df <- sangerseqR::traceMatrix(sangerseqR::makeBaseCalls(sanger)) |>
+        as.data.frame() |>
+        dplyr::rename(`A` = V1, `C` = V2, `G` = V3, `T` = V4) |>
+        dplyr::mutate(rowid = if(sanger_fwd){
+            dplyr::row_number()
+        }else{
+            rev(dplyr::row_number())
+        }) |>
+        tidyr::pivot_longer(-rowid, names_to = "base", values_to = "peak") |>
+        dplyr::mutate(base = if(sanger_fwd){
+            base
+        }else{
+            dplyr::case_when(base == "A" ~ "T", 
+                             base == "T" ~ "A", 
+                             base == "C" ~ "G", 
+                             base == "G" ~ "C")
+        }) |>
+        dplyr::mutate(base_fill_code = case_when(base == "A" ~ "1000", 
+                                                 base == "C" ~ "2000",
+                                                 base == "G" ~ "3000", 
+                                                 base == "T" ~ "4000")) 
+    
+    motif_trace_df <- list()
+    for (motif_id in unique(motif_ends$motif)) {
+        motif_trace_df[[motif_id]] <- full_trace_df |>
+                                    dplyr::filter(rowid >= motif_ends$trace_start[motif_ends$motif == motif_id] -5,
+                                                  rowid <= motif_ends$trace_end[motif_ends$motif == motif_id] +5) |>
+                                    dplyr::mutate(rowpos = nchar(motif) * (motif_id -1 ) + nchar(motif) * (rowid - min(rowid)) / (max(rowid) - min(rowid)))
+    }
+    motif_trace_df <- dplyr::bind_rows(motif_trace_df)
+    motif_trace_df <- motif_trace_df |>
+        dplyr::mutate(rowpos = if(sanger_fwd) {
+            rowpos
+        }else{
+            rev(rowpos)
+        }) |>
+        dplyr::group_by(base) |>
+        dplyr::mutate(trace = peak / max(peak)+1/16) |>
+        dplyr::ungroup()
+    
+    # establish the colors in the fill_key to use a character set for the 
+    # tile AND trace colors
+    fill_colors <- c(rep("#FFFFFF",7),
+                     colorRampPalette(colors = c("white", "#e41a1c"))(13),
+                     colorRampPalette(colors = c("#e41a1c", "#e41a1c"))(30),
+                     colorRampPalette(colors = c("#e41a1c", "#377eb8"))(51),
+                     "#32CD32", "#4169E1", "#121212", "#FC4338")
+    names(fill_colors) <- c(0:6, 7:19, 20:49, 50:100, 1000, 2000, 3000, 4000)
+    
+    #### We plot the raw trace which has been subsetted to just the motif locations
+    
+    # we modify the labels depending on how many motifs were found
+    motif_order <- seq_len(nchar(motif))
+    motif_current <- motif
+    if (!motif_fwd){
+        motif_current <- revcom(motif)
+        motif_order <- rev(motif_order)
+    }
+    
+    motif_label <- strsplit(
+        paste0(rep(motif_current, nrow(motif_ends)), collapse = ""), "")[[1]]
+    motif_pos_label <- rep(motif_order, nrow(motif_ends))
+    motif_x <- seq_along(motif_pos_label)-0.5
+    motif_ends$motif_colors <- c("lightgray","white")[1 + motif_ends$motif %% 2]
+    
+    # put the pieces together
+    motif_trace_df |>
+        ggplot(aes(x = rowpos, ymin = 1/16, ymax = trace, 
+                   color =base, fill = base_fill_code))+
+        geom_ribbon(alpha = 0.1)+
+        scale_color_manual(values = c("A" = "#4daf4a", "C" = "#377eb8", "G" = "black", "T" = "#e41a1c"))+
+        geom_tile(data = sanger_peaks_at_motif,
+                  inherit.aes = FALSE,
+                  aes(x = motif_pos, y = base_pos,  fill = peak_percent),
+                  color = "black")+
+        geom_text(data = sanger_peaks_at_motif,
+                  inherit.aes = FALSE, color = "black",
+                  aes(x = motif_pos, y = base_pos, label = peak_percent))+
+        scale_fill_manual(values = fill_colors)+
+        theme_void()+
+        theme(legend.position = "none",
+              aspect.ratio = 1/1.5)+
+        annotate("text", x = -0.5, y = -c(0.125, 0.25, 0.375, 0.5), 
+                 label = c("A","C","G","T")) +
+        annotate("text", x = motif_x, y = -0, 
+                 label = motif_label)+
+        annotate("rect", xmin = (motif_ends$motif-1)*nchar(motif), 
+                 xmax = (motif_ends$motif)*nchar(motif), 
+                 ymin = rep(-0.575, nrow(motif_ends)), 
+                 ymax = rep(-0.675, nrow(motif_ends)),
+                 fill = motif_ends$motif_colors)+
+        annotate("text", x = motif_x, y = -5/8, 
+                 label = motif_pos_label
+        )+
+        annotate("text", x = 1, y = 1, 
+                 label = paste0("motif given: ",motif, "\nmotif revcom below?  ", !motif_fwd), 
+                 hjust = 0, vjust = 0, size = 2)
+}
+
+#' Plot the Chromatogram and Percentage Tiles for Detected Motifs
+#'
+#' A convenience wrapper function that takes the full analysis result
+#' object and calls \code{plot_chromatogram_at_motif} to generate a
+#' combined visualization of the raw Sanger trace and the base call
+#' percentage tiles, specifically zoomed in on all regions where the
+#' target motif was detected in the sample sequence.
+#'
+#' @param fit The \code{list} object resulting from a base editor
+#'   analysis function (e.g., \code{detect_edits}). This object must
+#'   contain the \code{sample_sanger}, \code{motif}, \code{motif_fwd},
+#'   and \code{intermediate_data$raw_sample_df} slots.
+#' @return A \code{ggplot} object showing the raw chromatogram trace
+#'   and the base percentage tiling for all detected motifs.
+#' @export
+#' @examples
+#' # This requires a full analysis result object, 'fit', from a
+#' # function like detect_edits().
+#' # plot_sample_chromatogram(fit_object)
+plot_sample_chromatogram <- function(fit) {
+    motif <- fit$motif
+    motif_fwd <- fit$motif_fwd
+    sample_df <- fit$intermediate_data$raw_sample_df
+    
+    plot_chromatogram_at_motif(fit$sample_sanger, 
+                               raw_sample_df = sample_df, 
+                               motif = motif, motif_fwd = motif_fwd)
+}
+
+#' Plot the Chromatogram and Percentage Tiles for Detected Motifs in the Control
+#'
+#' A wrapper function that generates a combined visualization of the **raw
+#' control Sanger trace** and the base call percentage tiles, specifically
+#' zoomed in on all regions where the target motif was detected. This allows
+#' for visual confirmation of the control sequence quality and base calls
+#' within the context of the editing motif.
+#'
+#' @param fit The \code{list} object resulting from a base editor
+#'   analysis function (e.g., \code{detect_edits}). This object must
+#'   contain the \code{ctrl_sanger}, \code{motif}, \code{motif_fwd},
+#'   \code{ctrl_is_revcom}, and \code{intermediate_data$raw_sample_df}
+#'   slots.
+#' @return A \code{ggplot} object showing the raw chromatogram trace
+#'   and the base percentage tiling for all detected motifs in the
+#'   control sequence. If the control was provided as a FASTA (\code{.fa})
+#'   file instead of an ABIF (\code{.ab1}) file, an empty plot with a
+#'   message is returned.
+#' @import ggplot2
 #' @importFrom stringr str_detect
 #' @importFrom dplyr as_tibble group_by ungroup select left_join distinct case_when summarize pull rename mutate arrange filter inner_join ungroup
-plot_control_chromatogram = function(fit){
-  if (stringr::str_detect(fit$intermediate_data$sample_alt$ctrl_file[1], "\\.fa")){
-    message("control was not .ab1, returning empty ggplot")
-    return(ggplot()+
-             theme_void()+
-             theme(aspect.ratio = 1/1.5)+
-             annotate("text", x = 0, y = 0, label = "control not .ab1"))
-  }
-  motif = fit$motif
-  motif_fwd = fit$motif_fwd
-  control_fwd = !fit$ctrl_is_revcom
-  sanger = fit$ctrl_sanger
-  ctrl_df = suppressWarnings(
-    make_sample_df(sanger)%>% 
-      dplyr::rename(raw_control_position = position) %>%
-      dplyr::mutate(Tot.Area = A_area+ C_area+G_area+ T_area) %>%
-      dplyr::group_by(raw_control_position) %>%
-      dplyr::mutate(max_base_height = max(A_area, C_area, G_area, T_area)) %>%
-      dplyr::ungroup() %>%
-      dplyr::select(c(raw_control_position, max_base, A_area, C_area, G_area, T_area, 
-             Tot.Area, max_base_height,
-             A_perc, C_perc,G_perc,T_perc)) %>%
-      dplyr::left_join(fit$intermediate_data$raw_sample_df %>%
-                select(-c(A_area, C_area, G_area, T_area, Tot.Area,
-                          A_perc, C_perc, G_perc, T_perc, max_base, max_base_height))) %>%
-      dplyr::mutate(index = raw_control_position) %>%
-      dplyr::mutate(raw_sample_position = raw_control_position)
-  )
-  
-  
-  plot_chromatogram_at_motif(fit$ctrl_sanger, raw_sample_df = ctrl_df,
-                             motif = motif,
-                             sanger_fwd = control_fwd,
-                             motif_fwd = motif_fwd)
+#' @export
+#' @examples
+#' # This requires a full analysis result object, 'fit', from a
+#' # function like detect_edits().
+#' # plot_control_chromatogram(fit_object)
+plot_control_chromatogram <- function(fit) {
+    # local definitions
+    position <- raw_control_position <- NULL 
+    A_area <- C_area <- G_area <- T_area <- NULL
+    A_perc <- C_perc <- G_perc <- T_perc <- NULL
+    max_base <- Tot.Area <- max_base_height <- NULL
+    
+    if (stringr::str_detect(fit$intermediate_data$sample_alt$ctrl_file[1], "\\.fa")) {
+        message("control was not .ab1, returning empty ggplot")
+        return(ggplot() +
+                   theme_void() +
+                   theme(aspect.ratio = 1/1.5) +
+                   annotate("text", x = 0, y = 0, label = "control not .ab1"))
+    }
+    
+    motif <- fit$motif
+    motif_fwd <- fit$motif_fwd
+    control_fwd <- !fit$ctrl_is_revcom
+    sanger <- fit$ctrl_sanger
+    
+    ctrl_df <- make_sample_df(sanger) |> 
+        dplyr::rename(raw_control_position = position) |>
+        dplyr::mutate(Tot.Area = A_area + C_area + G_area + T_area) |>
+        dplyr::group_by(raw_control_position) |>
+        dplyr::mutate(max_base_height = max(A_area, C_area, G_area, T_area)) |>
+        dplyr::ungroup() |>
+        dplyr::select(c(raw_control_position, max_base, 
+                        A_area, C_area, G_area, T_area, 
+                        Tot.Area, max_base_height,
+                        A_perc, C_perc, G_perc, T_perc)) |>
+        dplyr::left_join(fit$intermediate_data$raw_sample_df |>
+                             select(-c(A_area, C_area, G_area, T_area, Tot.Area,
+                                       A_perc, C_perc, G_perc, T_perc, max_base, 
+                                       max_base_height)),
+                         by="raw_control_position") |>
+        dplyr::mutate(index = raw_control_position) |>
+        dplyr::mutate(raw_sample_position = raw_control_position)
+    
+    plot_chromatogram_at_motif(fit$ctrl_sanger, raw_sample_df = ctrl_df,
+                               motif = motif,
+                               sanger_fwd = control_fwd,
+                               motif_fwd = motif_fwd)
 }
-
-

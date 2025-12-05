@@ -2,16 +2,35 @@
 % Please edit documentation in R/detect_edits_batch.R
 \name{get_batch_results_table}
 \alias{get_batch_results_table}
-\title{get a single dataframe containing all test results}
+\title{Get a Single Data Frame Containing All Batch Test Results}
 \usage{
 get_batch_results_table(fits)
 }
 \arguments{
-\item{fits}{The result of multiEditR::detect_edits_batch}
+\item{fits}{The \code{list} of \code{MultiEditR} objects returned
+by \code{detect_edits_batch}.}
 }
 \value{
-A data.frame
+A consolidated \code{data.frame} containing all key
+  results across all successful samples, including the sample
+  name, motif details, editing significance, p-values, and base
+  percentages. The columns are renamed for clarity:
+  \itemize{
+    \item \code{target_position_in_motif}: Position relative to the motif.
+    \item \code{position_in_sample_trace}: Position in the raw sample trace.
+    \item \code{sample_max_base}: The primary called base in the sample.
+    \item \code{sample_secondary_base}: The secondary called base in the sample.
+    \item \code{expected_base}: The expected wild-type base at the site.
+  }
 }
 \description{
-get a single dataframe containing all test results
+Consolidates the primary results table (\code{sample_data}) from
+a list of successful \code{MultiEditR} objects (the output of
+\code{detect_edits_batch}) into a single, comprehensive \code{data.frame}.
+Samples that failed the analysis are automatically excluded.
+}
+\examples{
+# Requires a list of fit objects from a prior batch analysis:
+# results_list <- detect_edits_batch(params_df)
+# batch_table <- get_batch_results_table(results_list)
 }

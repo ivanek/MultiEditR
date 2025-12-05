@@ -2,17 +2,46 @@
 % Please edit documentation in R/detect_edits_batch.R
 \name{detect_edits_batch}
 \alias{detect_edits_batch}
-\title{run edit detection over multiple samples}
+\title{Run Base Edit Detection Over Multiple Samples in Batch}
 \usage{
-detect_edits_batch(params = NULL)
+detect_edits_batch(params = NULL, BPPARAM = BiocParallel::bpparam())
 }
 \arguments{
-\item{params}{A data.frame with the following columns: sample_file, control_file,
-motif, motif_fwd, wt, edit, phred_cutoff, p_value. see multiEditR::detect_edits for details.}
+\item{params}{A \code{data.frame} or a \code{character} string
+specifying the path to an Excel file (\code{.xlsx}) containing
+the input parameters. The data frame must include the following
+columns: \code{sample_name}, \code{sample_file}, \code{ctrl_file},
+\code{motif}, \code{motif_fwd}, \code{wt}, and \code{edit}.
+Optional columns include \code{p_value} and \code{phred_cutoff}.
+See \code{load_example_params} for the required format.}
+
+\item{BPPARAM}{A \code{BiocParallel::bpparam()} object specifying
+the parallel execution environment (e.g., number of cores).
+Default is the object returned by \code{BiocParallel::bpparam()}.}
 }
 \value{
-A list of multiEditR objects
+A \code{list} of \code{MultiEditR} objects, one for each
+  row in the \code{params} table. If an analysis fails for a
+  specific sample, the corresponding list element will contain
+  an error message and the flag \code{completed = FALSE}.
 }
 \description{
-run edit detection over multiple samples
+Executes the base edit detection process (\code{detect_edits}) for
+multiple samples defined in a parameter table or Excel file.
+This function leverages \code{BiocParallel} for parallel processing
+to speed up the analysis of many samples.
+}
+\examples{
+# 1. Create a parameter file (if one does not exist)
+param_path <- file.path(tempdir(), "batch_params.xlsx")
+# save_example_params(param_path)
+
+# 2. Load the parameters data frame
+# params_df <- load_parameters_file(param_path)
+
+# 3. Run the batch detection (use default BPPARAM for safety)
+# results_list <- detect_edits_batch(params = params_df)
+
+# View results for the first sample:
+# results(results_list[[1]])
 }

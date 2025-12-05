@@ -1,9 +1,10 @@
 ---
-title: "multiEditR batch mode results"
+title: "MultiEditR batch mode results"
 author: "Mitchell Kluesner"
 date: "`r format(Sys.time(), '%d %B, %Y, %H:%M')`"
 output:
   html_document:
+    code-fold: true
     fig_height: 6
     fig_width: 10
     toc: yes
@@ -19,31 +20,85 @@ params:
    results.list: NULL
 ---
 
+```{r}
+#| label: setup
+
+knitr::opts_chunk$set(
+  echo = FALSE, 
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+```{r}
+#| label: libraries
+
+library(tidyverse)
+library(MultiEditR)
+library(htmltools)
+library(knitr)
+library(DT)
+```
+
+```{r}
+#| label: helper_fun
+
+header_lvl <- function(lvl) {
+  inner <- function(s) {
+    rs <- paste0(
+      "\n\n",
+      strrep("#", lvl),
+      " ",
+      s,
+      "\n\n"
+    )
+    cat(rs)
+  }
+  return(inner)
+}
+
+h1 <- header_lvl(1)
+h2 <- header_lvl(2)
+h3 <- header_lvl(3)
+```
+
 # Parameters table used
+
 This should match your .xlsx 
-```{r, eval = TRUE, message = FALSE, echo = FALSE}
+
+```{r}
+#| label: params
+
 DT::datatable(params$params.tbl)
 ```
 
 # Compiled Results
+
 ## Editing data
-```{r, eval = TRUE, message = FALSE, echo = FALSE}
-  DT::datatable(get_batch_results_table(params$results.list))
+
+```{r}
+#| label: results
+
+DT::datatable(get_batch_results_table(params$results.list))
 ```
 
 ## Model fit data
-```{r, eval = TRUE, message = FALSE, echo = FALSE}
-  DT::datatable(dplyr::mutate_if(get_batch_stats_table(params$results.list),
-                          is.numeric, round, digits = 3))
-```
 
+```{r}
+#| label: batch_stats
+
+DT::datatable(dplyr::mutate_if(get_batch_stats_table(params$results.list),
+                               is.numeric, round, digits = 3))
+```
 
 # Individual Results
 
-```{r, results="asis", echo = FALSE, message = FALSE, warning=FALSE}
-library(htmltools)
-#params.tbl = params$params.tbl
-fits = params$results.list
+```{r}
+#| label: prepare_individual
+#| results: "asis"
+
+# params.tbl <- params$params.tbl
+fits <- params$results.list
 cat("  ")
 
 # # this works:
@@ -52,61 +107,66 @@ cat("  ")
 # geom_chromatogram(fits[[2]]$sample_sanger,fits[[2]]$sample_locs[1], fits[[2]]$sample_locs[2])
 
 # pre-making plots is important to not cause race conditions
-plots = list()
-for (fit in fits){
-    if (!fit$completed){
+plots <- list()
+for (fit in fits) {
+  if (!fit$completed){
     next
   }
-  plt1 =  plot_sample_chromatogram(fit)
-  plt2 = plot_control_chromatogram(fit)
- plots[[fit$sample_name]] =  list(plt1, plt2)
-}
 
-# here the actual rendering is done
-for (fit in fits){
-  cat(HTML(paste0("<h2>", fit$sample_name, "</h2>")), "\n")
+  plt1 <- plot_sample_chromatogram(fit)
+  plt2 <- plot_control_chromatogram(fit)
+  plots[[fit$sample_name]] <- list(plt1, plt2)
+}
+```
+
+
+```{r}
+#| label: render_individual
+#| results: "asis"
+
+for (fit in fits) {
+  #cat(HTML(paste0("<h2>", fit$sample_name, "</h2>")), "\n")
+  h2(fit$sample_name)
   
   if (!fit$completed){
     cat("\n", "Sample failed, likely due to low quality in Sanger sequence",
         "\n", "error message: ",fit$error$message)
     next
   }
-
+  
   cat("\n", "sample file:", 
-      base::basename(fit$intermediate_data$sample_alt$sample_file[1]),
+      basename(fit$intermediate_data$sample_alt$sample_file[1]),
       "\n")
-   cat("\n", "control file:", 
-       base::basename(fit$intermediate_data$sample_alt$ctrl_file[1]),
-       "\n")
-   HTML(cat("\n", "motif:", 
-       fit$motif,
-       "\n"))
-   
-   HTML(cat("\n**Chromatograms**\n"))
-   print(plots[[fit$sample_name]][[1]])
-   print(plots[[fit$sample_name]][[2]])
-   
-  HTML(cat("<h3>", "Editing Data","</h3>", "\n"))
-   print(
-   tagList(
-    fit$sample_data %>%
-      dplyr::mutate_if(is.numeric, round, digits=3) %>%
-      dplyr::select(-sample_name, -motif, -ctrl_max_base) %>%
-      DT::datatable()
-   )
+  cat("\n", "control file:", 
+      basename(fit$intermediate_data$sample_alt$ctrl_file[1]),
+      "\n")
+  HTML(cat("\n", "motif:", fit$motif, "\n"))
+  
+  HTML(cat("\n**Chromatograms**\n"))
+  print(plots[[fit$sample_name]][[1]])
+  print(plots[[fit$sample_name]][[2]])
+  
+  #HTML(cat("<h3>", "Editing Data","</h3>", "\n"))
+  h3("Editing Data")
+  print(
+    tagList(
+      fit$sample_data |>
+        dplyr::mutate_if(is.numeric, round, digits=3) |>
+        dplyr::select(-sample_name, -motif, -ctrl_max_base) |>
+        DT::datatable()
+    )
   )
-   
-  HTML(cat("<h3>", "Model parameters", "</h3>", "\n"))
-   print(
-   tagList(
-        fit$statistical_parameters %>%
-      dplyr::mutate_if(is.numeric, round, digits=3) %>%
-      DT::datatable()
-   )
+  
+  #HTML(cat("<h3>", "Model parameters", "</h3>", "\n"))
+  h3("Model parameters")
+  print(
+    tagList(
+      fit$statistical_parameters |>
+        dplyr::mutate_if(is.numeric, round, digits=3) |>
+        DT::datatable()
+    )
   )
-   HTML("<br>")
-
+  HTML("<br>")
+  
 }
-
-
 ```

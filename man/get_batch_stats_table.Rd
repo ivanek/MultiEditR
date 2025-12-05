@@ -2,16 +2,31 @@
 % Please edit documentation in R/detect_edits_batch.R
 \name{get_batch_stats_table}
 \alias{get_batch_stats_table}
-\title{get a single dataframe containing all test critical statistics}
+\title{Get a Single Data Frame Containing All Batch Critical Statistics}
 \usage{
 get_batch_stats_table(fits)
 }
 \arguments{
-\item{fits}{The result of multiEditR::detect_edits_batch}
+\item{fits}{The \code{list} of \code{MultiEditR} objects returned
+by \code{detect_edits_batch}. Only samples flagged as
+\code{completed = TRUE} are included.}
 }
 \value{
-A data.frame
+A consolidated \code{data.frame} where each row
+  corresponds to a successful sample, and the columns show the
+  Filliben correlation coefficient for each base's ZAGA model
+  (e.g., \code{A fillibens coef.}, \code{C fillibens coef.}, etc.).
 }
 \description{
-get a single dataframe containing all test critical statistics
+Consolidates the **Filliben correlation coefficients** from the
+statistical noise modeling (\code{statistical_parameters}) for
+all successful samples processed in a batch. The Filliben
+coefficient measures the linearity of the residuals' QQ-plot
+and indicates the goodness-of-fit of the ZAGA model to the
+background noise.
+}
+\examples{
+# Requires a list of fit objects from a prior batch analysis:
+# results_list <- detect_edits_batch(params_df)
+# stats_table <- get_batch_stats_table(results_list)
 }
