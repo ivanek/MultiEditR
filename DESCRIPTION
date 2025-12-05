@@ -16,7 +16,7 @@ License: MIT + file LICENSE
 Encoding: UTF-8
 biocViews: Alignment, SequenceMatching, Sequencing, Genetics
 Depends: 
-    R (>= 4.6.0)
+    R (>= 4.5.0)
 Imports: 
     methods,
     ggplot2,
