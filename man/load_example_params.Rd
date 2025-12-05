@@ -7,7 +7,7 @@
 load_example_params()
 }
 \value{
-A \code{data.frame} containing the example parameters
+A \code{tibble} containing the example parameters
   with absolute paths to the sample and control files in the
   package's \code{extdata} directory.
 }

@@ -30,7 +30,7 @@ modified from \code{CrispRVariants::abif_to_fastq} and implements
 the Mott trimming algorithm.
 }
 \examples{
-# Create a dummy file for example (replace with a real path)
-dummy_path <- tempfile(fileext = ".ab1")
-# get_trim_points(dummy_path)
+# sample_file <- system.file("extdata", "RP272_cdna_wt.ab1", package="MultiEditR")
+# get_trim_points(sample_file)
 }
+\keyword{internal}

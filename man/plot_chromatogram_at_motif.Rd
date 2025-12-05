@@ -16,7 +16,7 @@ plot_chromatogram_at_motif(
 \item{sanger}{A \code{sangerseq} object (the sample sequence)
 containing the raw trace data.}
 
-\item{raw_sample_df}{A \code{data.frame} containing the processed
+\item{raw_sample_df}{A \code{tibble} containing the processed
 sample base call and motif alignment information, typically the
 \code{fit$intermediate_data$raw_sample_df} output.}
 
@@ -54,3 +54,4 @@ position within the motif.
 # plot_chromatogram_at_motif(sanger_obj, fit_obj$intermediate_data$raw_sample_df,
 #   motif = "ACGT")
 }
+\keyword{internal}

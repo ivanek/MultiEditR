@@ -22,3 +22,4 @@ seq <- "ATGCCG"
 MultiEditR:::revcom(seq)
 # Expected output: "CGGCAT"
 }
+\keyword{internal}

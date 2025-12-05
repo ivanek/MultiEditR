@@ -7,13 +7,13 @@
 tableEditingData(editing_data)
 }
 \arguments{
-\item{editing_data}{A \code{data.frame} containing the intermediate
+\item{editing_data}{A \code{tibble} containing the intermediate
 editing analysis results, typically the
 \code{fit$intermediate_data$output_sample_alt} object, and must
 include the columns \code{base}, \code{sig}, and \code{perc}.}
 }
 \value{
-A summarized \code{data.frame} with the following columns:
+A summarized \code{tibble} with the following columns:
   \itemize{
     \item \code{Base}: The edited base (e.g., 'T' for C->T).
     \item \code{Significance}: Logical (\code{TRUE}/\code{FALSE})

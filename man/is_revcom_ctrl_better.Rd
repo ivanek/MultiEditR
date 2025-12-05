@@ -34,3 +34,4 @@ against the **reverse complement** of the control sequence.
 # is_revcom_ctrl_better("ATGC", "GCAT")
 # # Expected: TRUE
 }
+\keyword{internal}

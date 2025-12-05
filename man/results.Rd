@@ -12,7 +12,7 @@ analysis function like \code{detect_edits}, containing both
 raw and intermediate processed data.}
 }
 \value{
-A \code{data.frame} containing the following columns:
+A \code{tibble} containing the following columns:
   \itemize{
     \item \code{raw_sample_position}: Position in the sample sanger
       sequence.
@@ -47,7 +47,7 @@ A \code{data.frame} containing the following columns:
 }
 \description{
 Consolidates the raw sequencing data and the edit detection
-results into a single comprehensive data frame for final output.
+results into a single comprehensive \code{tibble} for final output.
 }
 \examples{
 # This requires a full analysis result object, 'fit', from a

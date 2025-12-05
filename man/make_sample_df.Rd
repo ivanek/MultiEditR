@@ -11,8 +11,7 @@ make_sample_df(sample_sanger)
 from an ABIF file using \code{sangerseqR::sangerseq}.}
 }
 \value{
-A \code{tibble} (data frame) with one row per base call
-  position, containing:
+A \code{tibble} with one row per base call position, containing:
   \itemize{
     \item Peak locations for A, C, G, T.
     \item \code{max_base}: The primary called base.
@@ -24,7 +23,7 @@ A \code{tibble} (data frame) with one row per base call
 }
 \description{
 Extracts and processes base-call information from a \code{sangerseq}
-object to create a data frame containing peak area, location, and
+object to create a \code{tibble} containing peak area, location, and
 relative percentage for all four bases (A, C, G, T) at every called
 position. The base that was not called at a position is assigned the
 area value of the highest-called base at that same trace location.
@@ -36,3 +35,4 @@ area value of the highest-called base at that same trace location.
 # sanger_object <- sangerseqR::sangerseq(sanger_data)
 # df <- make_sample_df(sanger_object)
 }
+\keyword{internal}

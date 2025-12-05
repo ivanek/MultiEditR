@@ -7,7 +7,7 @@
 #' @param path A \code{character} string specifying the readable
 #'   file path to the Excel parameters spreadsheet (e.g.,
 #'   \code{"params.xlsx"}).
-#' @return A \code{data.frame} where the first seven column names
+#' @return A \code{tibble} where the first seven column names
 #'   are set to \code{"sample_name"}, \code{"sample_file"},
 #'   \code{"ctrl_file"}, \code{"motif"}, \code{"motif_fwd"},
 #'   \code{"wt"}, and \code{"edit"}.
@@ -30,7 +30,7 @@ load_parameters_file <- function(path){
 #' \code{MultiEditR} package, automatically setting the correct
 #' paths for the example sequence files.
 #'
-#' @return A \code{data.frame} containing the example parameters
+#' @return A \code{tibble} containing the example parameters
 #'   with absolute paths to the sample and control files in the
 #'   package's \code{extdata} directory.
 #' @export
@@ -72,9 +72,9 @@ save_example_params <- function(path){
 #' This function leverages \code{BiocParallel} for parallel processing
 #' to speed up the analysis of many samples.
 #'
-#' @param params A \code{data.frame} or a \code{character} string
+#' @param params A \code{tibble} or a \code{character} string
 #'   specifying the path to an Excel file (\code{.xlsx}) containing
-#'   the input parameters. The data frame must include the following
+#'   the input parameters. The \code{tibble} must include the following
 #'   columns: \code{sample_name}, \code{sample_file}, \code{ctrl_file},
 #'   \code{motif}, \code{motif_fwd}, \code{wt}, and \code{edit}.
 #'   Optional columns include \code{p_value} and \code{phred_cutoff}.
@@ -94,7 +94,7 @@ save_example_params <- function(path){
 #' param_path <- file.path(tempdir(), "batch_params.xlsx")
 #' # save_example_params(param_path)
 #'
-#' # 2. Load the parameters data frame
+#' # 2. Load the parameters \code{tibble}
 #' # params_df <- load_parameters_file(param_path)
 #'
 #' # 3. Run the batch detection (use default BPPARAM for safety)
@@ -105,14 +105,20 @@ save_example_params <- function(path){
 detect_edits_batch <- function(params = NULL, 
                                BPPARAM=BiocParallel::bpparam()) {
     if (is.null(params)) {
-        stop("detect_edits_batch requires a parameters data.frame")
+        stop("Function detect_edits_batch requires ",
+             "a parameters data frame (tibble).")
     }
     
     if (length(class(params)) == 1 && is(params, "character")){
-        message("params is a string, assuming it is a path",
-                "to an xlsx sheet containing the parameters.",
+        message("params is a string, assuming it is a path ",
+                "to an xlsx sheet containing the parameters. ",
                 "Attempting to load. ")
         params <- load_parameters_file(params)
+    }
+    
+    if (!inherits(tibble::tibble(), "data.frame")) {
+        stop("Function detect_edits_batch requires ",
+             "a parameters data frame (tibble).")
     }
     
     fits <- BiocParallel::bplapply(seq_len(nrow(params)),
@@ -141,16 +147,16 @@ detect_edits_batch <- function(params = NULL,
     return(fits)
 }  
 
-#' Get a Single Data Frame Containing All Batch Test Results
+#' Get a Single \code{tibble} Containing All Batch Test Results
 #'
 #' Consolidates the primary results table (\code{sample_data}) from
 #' a list of successful \code{MultiEditR} objects (the output of
-#' \code{detect_edits_batch}) into a single, comprehensive \code{data.frame}.
+#' \code{detect_edits_batch}) into a single, comprehensive \code{tibble}.
 #' Samples that failed the analysis are automatically excluded.
 #'
 #' @param fits The \code{list} of \code{MultiEditR} objects returned
 #'   by \code{detect_edits_batch}.
-#' @return A consolidated \code{data.frame} containing all key
+#' @return A consolidated \code{tibble} containing all key
 #'   results across all successful samples, including the sample
 #'   name, motif details, editing significance, p-values, and base
 #'   percentages. The columns are renamed for clarity:
@@ -196,7 +202,7 @@ get_batch_results_table <- function(fits){
     return(tbl)
 }
 
-#' Get a Single Data Frame Containing All Batch Critical Statistics
+#' Get a Single \code{tibble} Containing All Batch Critical Statistics
 #'
 #' Consolidates the **Filliben correlation coefficients** from the
 #' statistical noise modeling (\code{statistical_parameters}) for
@@ -208,7 +214,7 @@ get_batch_results_table <- function(fits){
 #' @param fits The \code{list} of \code{MultiEditR} objects returned
 #'   by \code{detect_edits_batch}. Only samples flagged as
 #'   \code{completed = TRUE} are included.
-#' @return A consolidated \code{data.frame} where each row
+#' @return A consolidated \code{tibble} where each row
 #'   corresponds to a successful sample, and the columns show the
 #'   Filliben correlation coefficient for each base's ZAGA model
 #'   (e.g., \code{A fillibens coef.}, \code{C fillibens coef.}, etc.).
@@ -248,7 +254,7 @@ get_batch_stats_table <- function(fits) {
 #'
 #' @param batch_results The \code{list} of \code{MultiEditR} objects
 #'   returned by \code{detect_edits_batch}.
-#' @param params The \code{data.frame} of input parameters that was
+#' @param params The \code{tibble} of input parameters that was
 #'   originally provided to \code{detect_edits_batch}.
 #' @param path A \code{character} string specifying the file path and
 #'   name for the output HTML report. Defaults to

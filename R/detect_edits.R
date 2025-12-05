@@ -43,11 +43,11 @@
 #'   objects.
 #' @importFrom readr read_lines
 #' @importFrom stringr str_split_1
-#' @importFrom dplyr group_by ungroup select left_join distinct case_when summarize pull n rename mutate arrange filter inner_join ungroup add_rownames
+#' @importFrom dplyr group_by ungroup select left_join distinct case_when summarize pull n rename mutate arrange filter inner_join ungroup add_rownames if_else
 #' @importFrom sangerseqR readsangerseq makeBaseCalls
 #' @importFrom Biostrings countPattern matchPattern 
 #' @importFrom pwalign pairwiseAlignment alignedSubject alignedPattern
-#' @importFrom tibble rownames_to_column
+#' @importFrom tibble rownames_to_column tibble as_tibble
 #' @export
 #' @examples
 #' # Use package-supplied example files
@@ -79,7 +79,7 @@ detect_edits <- function(sample_file, ctrl_file, motif, motif_fwd, wt, edit,
     edit_pvalue <- edit_padjust <- NULL
     sample_primary_call <- sample_secondary_call <- control_primary_call <- NULL
     index <- is_trimmed <- Tot.Area <- max_base_height <- NULL
-    sig <- base <- perc <- tally <- motif_id <- NULL
+    sig <- base <- perc <- tally <- motif_id <- motif_found <- NULL
     
     # get the sequences
     sample_sanger <- sangerseqR::readsangerseq(sample_file)
@@ -130,7 +130,7 @@ detect_edits <- function(sample_file, ctrl_file, motif, motif_fwd, wt, edit,
     
     #### this will hold our main sequence table
     sample_df <- make_sample_df(sample_sanger) |>
-        dplyr::rename(raw_sample_position = position)
+        dplyr::rename(raw_sample_position = "position")
     
     
     # apply the control sequence to the sample sequence. 
@@ -138,27 +138,26 @@ detect_edits <- function(sample_file, ctrl_file, motif, motif_fwd, wt, edit,
                                                     subject = DNAString(sample_seq))
     
     aligned_sample <- as.character(pwalign::alignedSubject(control_alignment))
-    aligned_sample <- strsplit(aligned_sample, "")[[1]]
+    aligned_sample <- stringr::str_split_1(aligned_sample, "")
     aligned_control <- as.character(pwalign::alignedPattern(control_alignment))
-    aligned_control <- strsplit(aligned_control, "")[[1]]
+    aligned_control <- stringr::str_split_1(aligned_control, "")
     
     # figure out the raw sample position
     raw_sample_position <- cumsum(aligned_sample != "-")
     raw_control_position <- cumsum(aligned_control != "-")
     
-    # Create a data.frame with the alignment and relative positions
-    alignment_df <- data.frame(raw_sample_position,
-                               sample_primary_call = aligned_sample, 
-                               raw_control_position,
-                               control_primary_call = aligned_control, 
-                               stringsAsFactors = FALSE)
+    # Create a tibble with the alignment and relative positions
+    alignment_df <- tibble(raw_sample_position,
+                           sample_primary_call = aligned_sample, 
+                           raw_control_position,
+                           control_primary_call = aligned_control)
     
     # bind the sample_df, which holds quality scores and percentages
     alignment_df <- dplyr::left_join(alignment_df, sample_df, by="raw_sample_position")
     
     # also bind the secondary call in the sample
-    secondary_call <- data.frame(sample_secondary_call = stringr::str_split_1(secondary_seq, ""),
-                                 raw_sample_position = seq_len(nchar(secondary_seq)))
+    secondary_call <- tibble(sample_secondary_call = stringr::str_split_1(secondary_seq, ""),
+                             raw_sample_position = seq_len(nchar(secondary_seq)))
     alignment_df <- dplyr::left_join(alignment_df, secondary_call, by="raw_sample_position")
     
     # find out what should be trimmed using Mott's algo, which Mitch implemented
@@ -186,7 +185,8 @@ detect_edits <- function(sample_file, ctrl_file, motif, motif_fwd, wt, edit,
                                                          subject = DNAString(ctrl_seq), 
                                                          max.mismatch = 0)
     motif_alignments <- motif_alignments_to_ctrl@ranges |> 
-        as.data.frame()
+        as.data.frame() |>
+        as_tibble()
     
     message("Total of ", nrow(motif_alignments),
             " alignment(s) of motif to control sequence found.")
@@ -195,14 +195,16 @@ detect_edits <- function(sample_file, ctrl_file, motif, motif_fwd, wt, edit,
     alignment_df$motif_found <- -1
     
     for (i in seq_len(nrow(motif_alignments))) {
-        start <- motif_alignments[i, "start"]
-        end <- motif_alignments[i, "end"]
-        alignment_df$motif[ alignment_df$raw_control_position %in% 
-                                seq(from = start, to = end, by = 1) ] <- i
+        mstart <- motif_alignments$start[i]
+        mend <- motif_alignments$end[i]
+        mrange <- seq(from = mstart, to = mend, by = 1)
+        alignment_df <- alignment_df |>
+            mutate(motif_found = if_else(raw_control_position %in% mrange, i, motif_found),
+                   motif = motif_found)
     }  
     
     motif_part_of_sample <- alignment_df |>
-        filter(motif != -1)
+        filter(motif_found != -1)
     
     ## lets check if any of the motif is being suggested for trimming, and warn if so
     if (any(motif_part_of_sample$trimmed)){
@@ -213,19 +215,19 @@ detect_edits <- function(sample_file, ctrl_file, motif, motif_fwd, wt, edit,
     }
     
     # this is all just renames to be compatible with make_ZAGA_df
-    motif_part_of_sample$expected_motif <- motif_part_of_sample$control_primary_call 
-    motif_part_of_sample$ctrl_max_base <- motif_part_of_sample$expected_motif 
-    motif_part_of_sample$index <- motif_part_of_sample$raw_sample_position
-    motif_part_of_sample$ctrl_index <- motif_part_of_sample$raw_control_position
+    motif_part_of_sample <- motif_part_of_sample |>
+        mutate(expected_motif = control_primary_call,
+               ctrl_max_base = expected_motif ,
+               index = raw_sample_position,
+               ctrl_index = raw_control_position)
     # this should be used for generating the NULL; only keep the trimmed part
     nonmotif_part_of_sample <- alignment_df |>
-        dplyr::filter(motif == -1) |>
+        dplyr::filter(motif_found == -1) |>
         dplyr::filter(!trimmed)
     
     # pass it to the ZAGA function
     zaga_parameters <- make_ZAGA_df(nonmotif_part_of_sample, p_adjust = p_value) |>
-        dplyr::mutate(sample_file = sample_file) |>
-        dplyr::select(everything())
+        dplyr::mutate(sample_file = sample_file)
     
     output_stats <- calculate_edit_pvalue(motif_part_of_sample,
                                           zaga_parameters, wt, edit, p_value)
@@ -311,7 +313,7 @@ detect_edits <- function(sample_file, ctrl_file, motif, motif_fwd, wt, edit,
                                        mutate(ctrl_file = ctrl_file) |>
                                        mutate(sample_file = sample_file),
                                    "output_sample_alt" = output_sample_alt,
-                                   "motif_positions" = motif_part_of_sample$position)
+                                   "motif_positions" = motif_part_of_sample$raw_sample_position)
     )
     class(output) <- "multieditR"
     

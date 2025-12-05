@@ -2,7 +2,7 @@
 % Please edit documentation in R/detect_edits_batch.R
 \name{get_batch_results_table}
 \alias{get_batch_results_table}
-\title{Get a Single Data Frame Containing All Batch Test Results}
+\title{Get a Single \code{tibble} Containing All Batch Test Results}
 \usage{
 get_batch_results_table(fits)
 }
@@ -11,7 +11,7 @@ get_batch_results_table(fits)
 by \code{detect_edits_batch}.}
 }
 \value{
-A consolidated \code{data.frame} containing all key
+A consolidated \code{tibble} containing all key
   results across all successful samples, including the sample
   name, motif details, editing significance, p-values, and base
   percentages. The columns are renamed for clarity:
@@ -26,7 +26,7 @@ A consolidated \code{data.frame} containing all key
 \description{
 Consolidates the primary results table (\code{sample_data}) from
 a list of successful \code{MultiEditR} objects (the output of
-\code{detect_edits_batch}) into a single, comprehensive \code{data.frame}.
+\code{detect_edits_batch}) into a single, comprehensive \code{tibble}.
 Samples that failed the analysis are automatically excluded.
 }
 \examples{

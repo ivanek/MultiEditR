@@ -7,9 +7,9 @@
 detect_edits_batch(params = NULL, BPPARAM = BiocParallel::bpparam())
 }
 \arguments{
-\item{params}{A \code{data.frame} or a \code{character} string
+\item{params}{A \code{tibble} or a \code{character} string
 specifying the path to an Excel file (\code{.xlsx}) containing
-the input parameters. The data frame must include the following
+the input parameters. The \code{tibble} must include the following
 columns: \code{sample_name}, \code{sample_file}, \code{ctrl_file},
 \code{motif}, \code{motif_fwd}, \code{wt}, and \code{edit}.
 Optional columns include \code{p_value} and \code{phred_cutoff}.
@@ -36,7 +36,7 @@ to speed up the analysis of many samples.
 param_path <- file.path(tempdir(), "batch_params.xlsx")
 # save_example_params(param_path)
 
-# 2. Load the parameters data frame
+# 2. Load the parameters \code{tibble}
 # params_df <- load_parameters_file(param_path)
 
 # 3. Run the batch detection (use default BPPARAM for safety)

@@ -2,7 +2,7 @@
 % Please edit documentation in R/detect_edits_batch.R
 \name{get_batch_stats_table}
 \alias{get_batch_stats_table}
-\title{Get a Single Data Frame Containing All Batch Critical Statistics}
+\title{Get a Single \code{tibble} Containing All Batch Critical Statistics}
 \usage{
 get_batch_stats_table(fits)
 }
@@ -12,7 +12,7 @@ by \code{detect_edits_batch}. Only samples flagged as
 \code{completed = TRUE} are included.}
 }
 \value{
-A consolidated \code{data.frame} where each row
+A consolidated \code{tibble} where each row
   corresponds to a successful sample, and the columns show the
   Filliben correlation coefficient for each base's ZAGA model
   (e.g., \code{A fillibens coef.}, \code{C fillibens coef.}, etc.).

@@ -12,7 +12,7 @@ file path to the Excel parameters spreadsheet (e.g.,
 \code{"params.xlsx"}).}
 }
 \value{
-A \code{data.frame} where the first seven column names
+A \code{tibble} where the first seven column names
   are set to \code{"sample_name"}, \code{"sample_file"},
   \code{"ctrl_file"}, \code{"motif"}, \code{"motif_fwd"},
   \code{"wt"}, and \code{"edit"}.

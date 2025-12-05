@@ -14,7 +14,7 @@ create_MultiEditR_report(
 \item{batch_results}{The \code{list} of \code{MultiEditR} objects
 returned by \code{detect_edits_batch}.}
 
-\item{params}{The \code{data.frame} of input parameters that was
+\item{params}{The \code{tibble} of input parameters that was
 originally provided to \code{detect_edits_batch}.}
 
 \item{path}{A \code{character} string specifying the file path and
