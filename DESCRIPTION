@@ -19,19 +19,19 @@ Depends:
     R (>= 4.6.0)
 Imports: 
     methods,
-    ggplot2 (>= 3.5.1),
+    ggplot2,
     BiocParallel,
     pwalign,
-    Biostrings (>= 2.70.3),
-    sangerseqR (>= 1.38.0),
-    tibble (>= 3.2.1),
-    stringr (>= 1.5.1),
-    tidyr (>= 1.3.0),
-    plyr (>= 1.8.9),
-    dplyr (>= 1.1.4),
-    readr (>= 2.1.4),
-    gamlss (>= 5.4),
-    gamlss.dist (>= 6.1),
+    Biostrings,
+    sangerseqR,
+    tibble,
+    stringr,
+    tidyr,
+    plyr,
+    dplyr,
+    readr,
+    gamlss,
+    gamlss.dist,
     rmarkdown,
     readxl,
     writexl,
@@ -39,7 +39,7 @@ Imports:
 Suggests: 
     knitr,
     quarto,
-    testthat (>= 3.0.0)
+    testthat
 RoxygenNote: 7.3.3
 SystemRequirements: quarto
 VignetteBuilder: quarto

@@ -121,3 +121,7 @@ fidelity to RNA-seq. Mol Ther Nucleic Acids. 2021 Jul 21;25:515-523.
 doi: [10.1016/j.omtn.2021.07.008](https://doi.org/10.1016/j.omtn.2021.07.008). 
 PMID: [34589274](https://pubmed.ncbi.nlm.nih.gov/34589274/); 
 PMCID: [PMC8463291](https://pmc.ncbi.nlm.nih.gov/articles/PMC8463291/).
+
+### This repository
+
+- [ivanek/MultiEditR](https://github.com/ivanek/MultiEditR)
