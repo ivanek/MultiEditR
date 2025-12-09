@@ -256,7 +256,8 @@ make_ZAGA_df <- function(sanger_df, p_adjust, seed=1) {
 #'   columns indicating significance both raw (\code{A_sig} to
 #'   \code{T_sig}) and adjusted (\code{A_sig_adjust} to
 #'   \code{T_sig_adjust}).
-#' @importFrom dplyr filter select mutate 
+#' @importFrom dplyr filter select mutate across all_of
+#' @importFrom tidyr pivot_longer pivot_wider
 #' @importFrom tibble tibble
 #' @keywords internal
 #' @examples
@@ -268,54 +269,73 @@ make_ZAGA_df <- function(sanger_df, p_adjust, seed=1) {
 #' #   p_value = 0.05)
 pvalue_adjust <- function(sanger_df, wt, boi, motif, sample_file, 
                           critical_values, zaga_parameters, p_value) {
+    
     # local definitions
     ctrl_max_base <- ctrl_index <- index <- max_base <- NULL
     A_area <- C_area <- G_area <- T_area <- NULL
-    A_perc <- T_perc <- NULL
+    A_perc <- C_perc <- G_perc <- T_perc <- NULL
     A_pvalue <- C_pvalue <- G_pvalue <- T_pvalue <- NULL
     A_p_adjust <- C_p_adjust <- G_p_adjust <- T_p_adjust <- NULL
-    A_sig <- T_sig <- A_sig_adjust <- T_sig_adjust <- NULL
+    A_sig <- C_sig <- G_sig <- T_sig <- NULL
+    A_sig_adjust <- C_sig_adjust <- G_sig_adjust <- T_sig_adjust <- NULL
     
-    sanger_df |>
-        # only bases of interest
-        dplyr::filter(grepl(wt, ctrl_max_base)) |> # To only pull out the bases of interest from the motif
-        dplyr::select(index, ctrl_index, ctrl_max_base, max_base, A_area:T_area, A_perc:T_perc) |>
-        # If the channel is not found in the potential edits, then it is not applicable or NA, otherwise
-        # If the height of the channel is greater than the critical value for that channel,
-        # return TRUE, otherwise, return FALSE
-        dplyr::mutate(A_pvalue = mapply(FUN = gamlss.dist::dZAGA, x = A_area,
-                                        mu = zaga_parameters[1, "mu"],
-                                        sigma = zaga_parameters[1, "sigma"],
-                                        nu = zaga_parameters[1, "nu"]),
-                      C_pvalue = mapply(FUN = gamlss.dist::dZAGA, x = C_area,
-                                        mu = zaga_parameters[2, "mu"],
-                                        sigma = zaga_parameters[2, "sigma"],
-                                        nu = zaga_parameters[2, "nu"]),
-                      G_pvalue = mapply(FUN = gamlss.dist::dZAGA, x = G_area,
-                                        mu = zaga_parameters[3, "mu"],
-                                        sigma = zaga_parameters[3, "sigma"],
-                                        nu = zaga_parameters[3, "nu"]),
-                      T_pvalue = mapply(FUN = gamlss.dist::dZAGA, x = T_area,
-                                        mu = zaga_parameters[4, "mu"],
-                                        sigma = zaga_parameters[4, "sigma"],
-                                        nu = zaga_parameters[4, "nu"])) |>
-        dplyr::mutate(A_p_adjust = p.adjust(A_pvalue, "BH"),
-                      C_p_adjust = p.adjust(C_pvalue, "BH"),
-                      G_p_adjust = p.adjust(G_pvalue, "BH"),
-                      T_p_adjust = p.adjust(T_pvalue, "BH")) |>
-        dplyr::mutate(A_sig = if(!grepl("A", boi)) {FALSE} else {ifelse(A_pvalue <= p_value, TRUE, FALSE)},
-                      C_sig = if(!grepl("C", boi)) {FALSE} else {ifelse(C_pvalue <= p_value, TRUE, FALSE)},
-                      G_sig = if(!grepl("G", boi)) {FALSE} else {ifelse(G_pvalue <= p_value, TRUE, FALSE)},
-                      T_sig = if(!grepl("T", boi)) {FALSE} else {ifelse(T_pvalue <= p_value, TRUE, FALSE)}) |>
-        dplyr::mutate(A_sig_adjust = if(!grepl("A", boi)) {FALSE} else {ifelse(A_p_adjust<= p_value, TRUE, FALSE)},
-                      C_sig_adjust = if(!grepl("C", boi)) {FALSE} else {ifelse(C_p_adjust <= p_value, TRUE, FALSE)},
-                      G_sig_adjust = if(!grepl("G", boi)) {FALSE} else {ifelse(G_p_adjust <= p_value, TRUE, FALSE)},
-                      T_sig_adjust = if(!grepl("T", boi)) {FALSE} else {ifelse(T_p_adjust <= p_value, TRUE, FALSE)}) |>
-        ### also selecting for the sample index added 07.09.2019
+    # Filter for bases of interest
+    filtered_df <- sanger_df |>
+        dplyr::filter(grepl(wt, ctrl_max_base)) |>
         dplyr::select(index, ctrl_index, ctrl_max_base, max_base, 
-                      A_area:T_area, A_perc:T_perc, A_sig:T_sig, 
-                      A_sig_adjust:T_sig_adjust, A_pvalue:T_pvalue, 
-                      A_p_adjust:T_p_adjust) |>
+                      A_area, C_area, G_area, T_area, 
+                      A_perc, C_perc, G_perc, T_perc)
+    
+    # Calculate p-values for each base
+    for (base in bases) {
+        base_idx <- match(base, bases)
+        area_col <- paste0(base, "_area")
+        pvalue_col <- paste0(base, "_pvalue")
+        p_adjust_col <- paste0(base, "_p_adjust")
+        sig_col <- paste0(base, "_sig")
+        sig_adjust_col <- paste0(base, "_sig_adjust")
+        
+        filtered_df[[pvalue_col]] <- mapply(
+            FUN = gamlss.dist::dZAGA,
+            x = filtered_df[[area_col]],
+            mu = zaga_parameters[base_idx, "mu"],
+            sigma = zaga_parameters[base_idx, "sigma"],
+            nu = zaga_parameters[base_idx, "nu"]
+        )
+        
+        # Apply Benjamini-Hochberg correction
+        filtered_df[[p_adjust_col]] <- p.adjust(filtered_df[[pvalue_col]], "BH")
+        
+        # Check if base is in bases of interest (potential edits)
+        is_boi <- grepl(base, boi)
+        
+        # Raw significance
+        filtered_df[[sig_col]] <- if (is_boi) {
+            filtered_df[[pvalue_col]] <= p_value
+        } else {
+            FALSE
+        }
+        
+        ## TODO: FIX double checking of p_value threshold, once on p-value and once on FDR!
+        # Adjusted significance
+        filtered_df[[sig_adjust_col]] <- if (is_boi) {
+            filtered_df[[p_adjust_col]] <= p_value
+        } else {
+            FALSE
+        }
+    }
+    
+    # Select and reorder columns, add metadata
+    filtered_df |>
+        dplyr::select(
+            index, ctrl_index, ctrl_max_base, max_base,
+            A_area, C_area, G_area, T_area, 
+            A_perc, C_perc, G_perc, T_perc,
+            A_sig, C_sig, G_sig ,T_sig, 
+            A_sig_adjust, C_sig_adjust, G_sig_adjust, T_sig_adjust,
+            A_pvalue, C_pvalue, G_pvalue,T_pvalue, 
+            A_p_adjust, C_p_adjust, G_p_adjust, T_p_adjust
+        ) |>
         dplyr::mutate(motif = motif, sample_file = sample_file)
 }
 
