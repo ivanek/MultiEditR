@@ -106,7 +106,7 @@ detect_edits <- function(sample_file, ctrl_file, motif, motif_fwd, wt, edit,
     # figure out if the control should be rev-com
     ctrl_is_revcom <- FALSE
     if (is_revcom_ctrl_better(sample_seq, ctrl_seq)){
-        message("Control sequence aligns better to sample sequence",
+        message("Control sequence aligns better to sample sequence ",
                 "when rev-com.", "Applying revcom to control sequence.")
         ctrl_seq <- revcom(ctrl_seq)
         ctrl_is_revcom <- TRUE

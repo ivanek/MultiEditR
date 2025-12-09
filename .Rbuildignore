@@ -16,5 +16,6 @@
 ^CITATION\.cff$
 ^LICENSE\.md$
 ^test\.R$
+^my_html_report\.html$
 ^vignettes/\.quarto$
 ^vignettes/*_files$

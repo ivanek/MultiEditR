@@ -70,6 +70,96 @@ get_trim_points <- function (path, cutoff = 0.001,
     return(c(trim_start, trim_finish))
 }
 
+#' Fit ZAGA Model with Progressive Fallback Strategy
+#' 
+#' Attempts to fit a ZAGA model with progressively increasing mu.start
+#' values if initial attempts fail.
+#' 
+#' @param x Numeric vector of area values (noise)
+#' @importFrom gamlss gamlss gamlss.control
+#' @importFrom gamlss.dist ZAGA
+#' @return Fitted gamlss model object, or NULL if all attempts fail
+#' @keywords internal
+fit_zaga_with_fallback <- function(x) {
+    uniq <- unique(x)
+    if(all(x) == 0 ||
+       (length(uniq) == 2 && uniq[1] == 0 && uniq[2] == 1)) {
+        # add noise if all 0s, or all 0s and one other value.
+        x <- c(rep(0, 989), 0.00998720389310502, 0.00998813447664401,0.009992887520785,
+               0.00999585366068316, 0.00999623914632598, 0.00999799013526835, 0.010001499423723,
+               0.0100030237039207, 0.0100045782875701, 0.0100048452355807, 0.0100049548867042)
+        message("Replacement vector used for low noise.")
+    }
+    
+    # Try progressively different starting values
+    mu_starts <- list(NULL, 1, 2, 3, 4, mean(x))
+    
+    for (mu_start in mu_starts) {
+        model <- tryCatch({
+            gamlss::gamlss(
+                x ~ 1,
+                family = gamlss.dist::ZAGA,
+                mu.start = mu_start,
+                control = gamlss::gamlss.control(trace = FALSE)
+            )
+        }, error = function(e) NULL)
+        
+        if (!is.null(model)) return(model)
+    }
+    
+    warning("All ZAGA fitting attempts failed for a nucleotide")
+    return(NULL)
+}
+
+#' Extract Parameters from Fitted ZAGA Model
+#' 
+#' @param model Fitted gamlss model object
+#' @param p_adjust Adjusted p-value for critical value calculation
+#' @importFrom gamlss.dist qZAGA
+#' @importFrom tibble tibble
+#' @return Tibble with mu, sigma, nu, crit, and fillibens
+#' @keywords internal
+extract_zaga_parameters <- function(model, p_adjust) {
+    if (is.null(model)) {
+        return(tibble::tibble(
+            mu = NA_real_, 
+            sigma = NA_real_, 
+            nu = NA_real_,
+            crit = NA_real_, 
+            fillibens = NA_real_
+        ))
+    }
+    
+    # Transform parameters from link scale
+    mu <- exp(model$mu.coefficients[[1]])
+    sigma <- exp(model$sigma.coefficients[[1]])
+    
+    # Convert nu from logit scale to probability
+    nu_logit <- model$nu.coefficients[[1]]
+    nu <- exp(nu_logit) / (1 + exp(nu_logit))
+    
+    # Calculate Filliben correlation for goodness-of-fit
+    qq_data <- qqnorm(model$residuals, plot = FALSE)
+    fillibens <- cor(as.data.frame(qq_data))[1, 2]
+    
+    # Calculate critical value at specified p-value
+    crit <- gamlss.dist::qZAGA(
+        p = 1 - p_adjust, 
+        mu = mu, 
+        nu = nu, 
+        sigma = sigma
+    )
+    
+    tibble::tibble(
+        mu = mu, 
+        sigma = sigma, 
+        nu = nu, 
+        crit = crit, 
+        fillibens = fillibens
+    )
+}
+
+
 #' Generate ZAGA Distribution Parameters for Noise Estimation
 #'
 #' Fits the Zero-Adjusted Gamma (ZAGA) distribution to the area
@@ -114,46 +204,19 @@ make_ZAGA_df <- function(sanger_df, p_adjust, seed=1) {
     nvals$G <- dplyr::filter(sanger_df, max_base != "G")$G_area
     nvals$T <- dplyr::filter(sanger_df, max_base != "T")$T_area
     
+    
+    # Fit ZAGA models to each nucleotide's noise distribution
     n_models <- withr::with_seed(seed, {
-        lapply(nvals, FUN = function(x) {
-            if((unique(x)[1] == 0 & length(unique(x)) == 1) |
-               (unique(x)[1] == 0 & length(unique(x)) == 2 & table(x)[2] == 1)) {
-                # add noise if all 0s, or all 0s and one other value.
-                x <- c(rep(0, 989), 0.00998720389310502, 0.00998813447664401,0.009992887520785,
-                       0.00999585366068316, 0.00999623914632598, 0.00999799013526835, 0.010001499423723,
-                       0.0100030237039207, 0.0100045782875701, 0.0100048452355807, 0.0100049548867042)
-                message("Replacement vector used for low noise.")
-            }
-            
-            tryCatch(gamlss::gamlss((x)~1, family = gamlss.dist::ZAGA, control=gamlss::gamlss.control(trace=FALSE)), error=function(e) # Progressively step up the mu.start if it fails
-                tryCatch(gamlss::gamlss((x)~1, family = gamlss.dist::ZAGA, mu.start = 1, control=gamlss::gamlss.control(trace=FALSE)), error=function(e)
-                    tryCatch(gamlss::gamlss((x)~1, family = gamlss.dist::ZAGA, mu.start = 2, control=gamlss::gamlss.control(trace=FALSE)), error=function(e)
-                        tryCatch(gamlss::gamlss((x)~1, family = gamlss.dist::ZAGA, mu.start = 3, control=gamlss::gamlss.control(trace=FALSE)), error=function(e) # additional step added.
-                            tryCatch(gamlss::gamlss((x)~1, family = gamlss.dist::ZAGA, mu.start = 4, control=gamlss::gamlss.control(trace=FALSE)), error=function(e) # additional step added.
-                                gamlss::gamlss((x)~1, family = gamlss.dist::ZAGA, mu.start = mean(x), control=gamlss::gamlss.control(trace=FALSE))
-                            )
-                        )
-                    )
-                )
-            )
-            # throws errors when a completely 0 vector
-        })
+        lapply(nvals, fit_zaga_with_fallback)
     })
     
-    null_m_params <- lapply(n_models, FUN = function(x) {
-        mu <- exp(x$mu.coefficients[[1]])
-        sigma <- exp(x$sigma.coefficients[[1]])
-        nu.logit <- x$nu.coefficients[[1]]
-        nu <- exp(nu.logit)/(1+exp(nu.logit))
-        fillibens <- cor(as.data.frame(qqnorm(x$residuals, plot = FALSE)))[1,2]
-        crit <- gamlss.dist::qZAGA(p = 1-p_adjust, mu = mu, nu = nu, sigma = sigma)
-        
-        return(tibble(mu = mu, sigma = sigma, nu = nu, 
-                      crit = crit, fillibens = fillibens))
+    # Extract parameters from fitted models
+    null_m_params <- lapply(n_models, function(model) {
+        extract_zaga_parameters(model, p_adjust)
     })
     
-    null_m_params <- null_m_params |>
-        dplyr::bind_rows(.id="base")
+    # Combine results into a tibble with base identifiers
+    null_m_params <- dplyr::bind_rows(null_m_params, .id = "base")
     
     return(null_m_params)
 }

@@ -9,3 +9,4 @@ vignettes/*.html
 vignettes/*.R
 vignettes/*_files
 test.R
+my_html_report.html
